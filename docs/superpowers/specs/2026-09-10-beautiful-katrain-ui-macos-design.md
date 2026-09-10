@@ -183,7 +183,7 @@ laiteux sur fond clair.
 Largeur 194 points, `.glassEffect()` appliqué après les modificateurs de mise en
 forme, contenu groupé dans un `GlassEffectContainer`. De haut en bas :
 
-1. Trait en cours — pastille de la couleur au trait, nom de la couleur, numéro de coup aligné à droite
+1. Trait en cours — pastille de la couleur au trait, nom de la couleur, numéro de coup aligné à droite ; pendant la réflexion de l'IA, voir 5.5
 2. Graphe de score — valeur numérique puis graphe en barres
 3. Prisonniers — « 3 — 1 », Noir puis Blanc
 4. Adversaire — stratégie et niveau
@@ -219,14 +219,41 @@ au-dessus du graphe ; le graphe ne porte que la forme.
 Un `HStack` de `Capsule()`, chaque barre animable indépendamment : une nouvelle barre
 pousse depuis la ligne médiane à chaque coup analysé.
 
-### 5.5 Barre latérale repliée
+### 5.5 Indicateur de réflexion de l'IA
+
+Quand le pont émet `thinking: true`, un anneau se met à tourner autour de la pastille
+du trait, et la mention « réfléchit… » remplace le numéro de coup jusqu'au retour de
+`thinking: false`. Aucun élément n'est ajouté à l'écran : l'indication est portée par
+la pastille, déjà présente.
+
+Le goban n'est ni voilé, ni recouvert, ni bloqué. C'est précisément pendant que
+l'adversaire calcule qu'on lit la position.
+
+Les boutons « Annuler » et « Passer » passent à l'état estompé et deviennent inertes,
+puisque ce n'est pas le trait du joueur humain. Les éléments de menu correspondants
+sont désactivés de la même façon.
+
+Deux temporisations, pour éviter un indicateur clignotant quand KataGo répond en
+quelques centaines de millisecondes :
+
+- **délai d'apparition de 400 ms** — en dessous, l'indicateur ne s'affiche jamais ;
+- **durée minimale d'affichage de 300 ms** — une fois apparu, il reste au moins ce
+  temps, même si la réponse arrive entre-temps.
+
+Ces deux valeurs sont portées par le modèle SwiftUI, pas par le pont : le pont émet
+`thinking` sans délai, l'interface décide seule de ce qu'elle en montre.
+
+Barre latérale repliée, le même anneau tourne autour de la pastille remontée dans la
+barre de titre ; il n'y a pas de mention textuelle à cette taille.
+
+### 5.6 Barre latérale repliée
 
 Le repli utilise le bouton natif de la barre d'outils et le raccourci système
 `⌃⌘S`. Quand la barre est repliée, trois éléments remontent dans la barre de titre,
 alignés à droite : la pastille du trait, la valeur du score, et une version réduite
 du graphe. Rien ne disparaît, tout se condense.
 
-### 5.6 Menus et raccourcis
+### 5.7 Menus et raccourcis
 
 | Menu | Élément | Raccourci |
 |---|---|---|
@@ -266,8 +293,9 @@ protocole. L'app collecte stderr dans un fichier journal.
 ## 7. Périmètre
 
 Dans le jalon 1 : nouvelle partie contre l'IA, pose de pierres, passe, annulation,
-abandon, prisonniers, trait, numéro de coup, graphe de score en temps réel, résultat
-final, barre latérale rétractable, menus et raccourcis natifs.
+abandon, prisonniers, trait, numéro de coup, graphe de score en temps réel,
+indicateur de réflexion de l'IA, résultat final, barre latérale rétractable, menus et
+raccourcis natifs.
 
 Hors jalon 1, explicitement : chargement et sauvegarde SGF, mode analyse, coups
 suggérés, points de teaching, territoire, variations, arbre de coups, horloge,
@@ -322,7 +350,9 @@ moteur et vérifie que la partie progresse.
 
 **Côté app** — tests unitaires purs, sans interface : décodage des événements,
 conversion point vers intersection aux quatre coins et hors plateau, agrégation des
-barres du graphe pour 5, 47 et 300 coups.
+barres du graphe pour 5, 47 et 300 coups, et temporisation de l'indicateur de
+réflexion — une réflexion de 200 ms ne doit rien afficher, une réflexion de 450 ms
+doit afficher l'indicateur pendant au moins 300 ms.
 
 L'interface elle-même est vérifiée à l'œil en exécutant l'application : le jalon 1
 ne justifie pas de tests d'interface automatisés.
