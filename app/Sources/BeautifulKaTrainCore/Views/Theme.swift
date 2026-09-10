@@ -8,7 +8,6 @@ public enum Theme {
     public static let gridLine = Color(red: 0.290, green: 0.220, blue: 0.137)
     public static let blackStone = Color(red: 0.102, green: 0.090, blue: 0.078)
     public static let whiteStone = Color(red: 0.969, green: 0.961, blue: 0.945)
-    public static let lastMoveMarker = Color(red: 0.847, green: 0.271, blue: 0.247)
 
     /// Lifts the sidebar slightly off the window background so its glass reads as
     /// glass rather than as a flat panel.
@@ -27,6 +26,12 @@ public enum Theme {
 
     public static func stone(_ color: PlayerColor) -> Color {
         color == .black ? blackStone : whiteStone
+    }
+
+    /// Marks the last move by contrast with the stone it sits on, rather than with a
+    /// colour of its own.
+    public static func lastMoveMarker(on stone: PlayerColor) -> Color {
+        stone == .black ? whiteStone : blackStone
     }
 
     public static func name(_ color: PlayerColor) -> String {

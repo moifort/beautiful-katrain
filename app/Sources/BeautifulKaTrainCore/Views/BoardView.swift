@@ -98,7 +98,9 @@ public struct BoardView: View {
     }
 
     private func drawLastMove(in context: inout GraphicsContext, geometry: BoardGeometry) {
-        guard let last = state.lastMove else { return }
+        guard let last = state.lastMove,
+            let stone = state.stones.first(where: { $0.row == last.row && $0.col == last.col })
+        else { return }
         let center = geometry.position(of: last)
         let radius = geometry.stoneRadius * 0.44
         let rect = CGRect(
@@ -107,8 +109,8 @@ public struct BoardView: View {
         )
         context.stroke(
             Path(ellipseIn: rect),
-            with: .color(Theme.lastMoveMarker),
-            lineWidth: max(1.2, geometry.stoneRadius * 0.22)
+            with: .color(Theme.lastMoveMarker(on: stone.color)),
+            lineWidth: max(0.8, geometry.stoneRadius * 0.10)
         )
     }
 }

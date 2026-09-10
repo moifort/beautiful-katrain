@@ -46,13 +46,14 @@ public struct SidebarView: View {
             Text(trailingLabel(state))
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.secondaryText)
-                .contentTransition(.opacity)
         }
     }
 
+    /// Only shown when there is something to say: the result at the end, or that the
+    /// AI is working. The move number was noise.
     private func trailingLabel(_ state: GameState) -> String {
         if state.status == .finished { return state.result ?? "terminée" }
-        return session.thinking.isVisible ? "réfléchit…" : "coup \(state.moveNumber)"
+        return session.thinking.isVisible ? "réfléchit…" : ""
     }
 
     private func scoreSection(_ state: GameState) -> some View {
@@ -65,24 +66,25 @@ public struct SidebarView: View {
     /// The figure and its arrow, read from the player's side: up and white when they
     /// are ahead, down and red when they are behind.
     private func leadReadout(_ state: GameState) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Spacer(minLength: 0)
             if let lead = session.currentLead, abs(lead) >= 0.05 {
                 Image(systemName: lead > 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                    .font(.system(size: 12))
+                    .font(.system(size: 9))
                     .foregroundStyle(lead > 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
                 Text(formatted(abs(lead)))
-                    .font(.system(size: 21))
+                    .font(.system(size: 15))
                     .foregroundStyle(lead > 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
                     .contentTransition(.numericText())
                     .monospacedDigit()
             } else if session.currentLead != nil {
                 Text("0,0")
-                    .font(.system(size: 21))
+                    .font(.system(size: 15))
                     .foregroundStyle(Theme.primaryText)
                     .monospacedDigit()
             } else {
                 Text("—")
-                    .font(.system(size: 21))
+                    .font(.system(size: 15))
                     .foregroundStyle(Theme.secondaryText)
             }
         }

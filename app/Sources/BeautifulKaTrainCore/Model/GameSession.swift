@@ -206,12 +206,24 @@ public final class GameSession {
         return scoreByMove.mapValues { $0 * sign }
     }
 
-    /// The player's current lead, once the analysis of the current move is in.
+    /// The most recent lead known at or before a given move.
+    ///
+    /// Analyses arrive a move or two behind the stones. Reading only the current move
+    /// would blank the figure out every time the AI plays, so the last known value
+    /// holds until a fresher one arrives.
+    nonisolated static func latestLead(in scores: [Int: Double], upTo moveNumber: Int) -> Double? {
+        scores.keys.filter { $0 <= moveNumber }.max().flatMap { scores[$0] }
+    }
+
+    /// The player's current lead, held over while KataGo catches up.
     public var currentLead: Double? {
         guard let state else { return nil }
         let sign: Double = state.humanColor == .black ? 1 : -1
-        guard let lead = scoreByMove[state.moveNumber] ?? state.scoreLead else { return nil }
-        return lead * sign
+        let lead =
+            scoreByMove[state.moveNumber]
+            ?? state.scoreLead
+            ?? Self.latestLead(in: scoreByMove, upTo: state.moveNumber)
+        return lead.map { $0 * sign }
     }
 
     /// True when the player may act: a game is running and it is their turn.
