@@ -204,17 +204,27 @@ illégal, le pont répond `error` et l'app se contente de ne rien changer.
 
 ### 5.4 Graphe de score
 
-Barres en capsules, style Health : une seule teinte, deux intensités. Au-dessus de
-la ligne médiane Noir mène, en dessous Blanc mène ; opacité pleine pour Noir, réduite
-pour Blanc. La barre du coup courant est en blanc pur.
+Barres en capsules, style Health, **lues du point de vue du joueur humain** et non
+de Noir : au-dessus du milieu le joueur mène et la barre est blanche, en dessous il
+est en retard et elle passe au rouge. La barre du coup courant est à pleine
+saturation. Le pont continue de rapporter le `scoreLead` vu de Noir ; c'est
+l'interface qui l'inverse quand le joueur prend Blanc, sans quoi les couleurs
+mentiraient une partie sur deux.
+
+Aucune ligne médiane n'est tracée : le passage du blanc au rouge marque le
+franchissement du zéro plus nettement qu'un trait.
+
+Au-dessus du graphe, la valeur est affichée à la manière de Bourse — un triangle
+vers le haut en blanc quand le joueur mène, vers le bas en rouge quand il est en
+retard, suivi de la valeur absolue. Aucun signe, aucune mention de couleur : la
+flèche et la teinte portent le sens.
 
 Les coups sont agrégés pour tenir dans la largeur disponible avec une largeur de
 barre minimale de 3,5 points : à 47 coups, une barre représente deux coups ; sur une
 partie longue le facteur d'agrégation augmente. La valeur agrégée est la moyenne des
 `score_lead` du groupe, en ignorant les entrées non encore analysées.
 
-Aucun axe, aucune graduation, aucune légende. La valeur exacte est donnée en chiffres
-au-dessus du graphe ; le graphe ne porte que la forme.
+Aucun axe, aucune graduation, aucune légende. Le graphe ne porte que la forme.
 
 Un `HStack` de `Capsule()`, chaque barre animable indépendamment : une nouvelle barre
 pousse depuis la ligne médiane à chaque coup analysé.
