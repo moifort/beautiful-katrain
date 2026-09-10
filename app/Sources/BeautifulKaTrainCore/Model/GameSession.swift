@@ -150,7 +150,7 @@ public final class GameSession {
             if let score { scoreByMove[index] = score }
         }
         state = newState
-        if newState.status == .finished { thinking.ended() }
+        if newState.status != .playing { thinking.ended() }
     }
 
     // -- commands ------------------------------------------------------------
@@ -185,6 +185,23 @@ public final class GameSession {
     public func passTurn() {
         guard canAct else { return }
         bridge.send(.pass(id: nextID()))
+    }
+
+    /// Flips the group under a point between dead and alive, while counting.
+    public func toggleDead(row: Int, col: Int) {
+        guard state?.status == .scoring else { return }
+        bridge.send(.toggleDead(id: nextID(), row: row, col: col))
+    }
+
+    public func acceptScore() {
+        guard state?.status == .scoring else { return }
+        bridge.send(.acceptScore(id: nextID()))
+    }
+
+    /// Takes back the last pass and carries on playing.
+    public func resumeGame() {
+        guard state?.status == .scoring else { return }
+        bridge.send(.resumeGame(id: nextID()))
     }
 
     public func undo() {

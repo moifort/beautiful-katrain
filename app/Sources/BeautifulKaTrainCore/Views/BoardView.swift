@@ -53,7 +53,31 @@ public struct BoardView: View {
         drawGrid(in: &context, geometry: geometry)
         drawStarPoints(in: &context, geometry: geometry)
         drawStones(in: &context, geometry: geometry)
-        drawLastMove(in: &context, geometry: geometry)
+        if let scoring = state.scoring {
+            drawTerritory(in: &context, geometry: geometry, scoring: scoring)
+        } else {
+            drawLastMove(in: &context, geometry: geometry)
+        }
+    }
+
+    /// Territory as small squares on the empty points, in the colour that owns them.
+    private func drawTerritory(
+        in context: inout GraphicsContext,
+        geometry: BoardGeometry,
+        scoring: ScoringDetail
+    ) {
+        let side = geometry.stoneRadius * 0.62
+        for owned in scoring.points {
+            let center = geometry.position(row: owned.row, col: owned.col)
+            let rect = CGRect(
+                x: center.x - side / 2, y: center.y - side / 2,
+                width: side, height: side
+            )
+            context.fill(
+                Path(roundedRect: rect, cornerRadius: side * 0.22),
+                with: .color(Theme.stone(owned.color))
+            )
+        }
     }
 
     private func drawGrid(in context: inout GraphicsContext, geometry: BoardGeometry) {
@@ -87,13 +111,19 @@ public struct BoardView: View {
 
     private func drawStones(in context: inout GraphicsContext, geometry: BoardGeometry) {
         let radius = geometry.stoneRadius
+        let dead = state.scoring?.deadPoints ?? []
         for stone in state.stones {
             let center = geometry.position(row: stone.row, col: stone.col)
             let rect = CGRect(
                 x: center.x - radius, y: center.y - radius,
                 width: radius * 2, height: radius * 2
             )
-            context.fill(Path(ellipseIn: rect), with: .color(Theme.stone(stone.color)))
+            let colour = Theme.stone(stone.color)
+            let isDead = dead.contains(stone.point)
+            context.fill(
+                Path(ellipseIn: rect),
+                with: .color(isDead ? colour.opacity(Theme.deadStoneOpacity) : colour)
+            )
         }
     }
 

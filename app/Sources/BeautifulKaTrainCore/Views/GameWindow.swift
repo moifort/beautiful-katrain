@@ -36,14 +36,23 @@ public struct GameWindow: View {
         ZStack {
             Theme.windowBackground.ignoresSafeArea()
             if let state = session.state {
-                BoardView(state: state, isInteractive: session.canAct) { point in
-                    session.play(row: point.row, col: point.col)
+                BoardView(state: state, isInteractive: isBoardInteractive(state)) { point in
+                    if state.status == .scoring {
+                        session.toggleDead(row: point.row, col: point.col)
+                    } else {
+                        session.play(row: point.row, col: point.col)
+                    }
                 }
                 .padding(20)
             } else {
                 ProgressView().controlSize(.small)
             }
         }
+    }
+
+    /// While counting, clicks mark groups rather than play stones.
+    private func isBoardInteractive(_ state: GameState) -> Bool {
+        state.status == .scoring ? true : session.canAct
     }
 
     private var title: String {

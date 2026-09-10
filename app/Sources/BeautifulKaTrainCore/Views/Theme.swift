@@ -28,6 +28,10 @@ public enum Theme {
         color == .black ? blackStone : whiteStone
     }
 
+    /// A stone agreed to be dead is not removed, it fades: the player must still be
+    /// able to see what they are agreeing to.
+    public static let deadStoneOpacity: Double = 0.28
+
     /// Marks the last move by contrast with the stone it sits on, rather than with a
     /// colour of its own.
     public static func lastMoveMarker(on stone: PlayerColor) -> Color {

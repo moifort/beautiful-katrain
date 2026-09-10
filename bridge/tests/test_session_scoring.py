@@ -1,0 +1,163 @@
+import io
+import json
+import os
+import sys
+
+import pytest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+os.environ.setdefault("KIVY_NO_ARGS", "1")
+os.environ.setdefault("KIVY_NO_CONSOLELOG", "1")
+
+from protocol import CommandError, EventWriter
+from pysgf import Move
+from session import BridgeSession
+
+
+class FakeEngine:
+    """Absorbs the analysis requests Game fires off; no KataGo involved."""
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
+@pytest.fixture
+def session():
+    stream = io.StringIO()
+    bridge = BridgeSession(EventWriter(stream))
+    bridge._engine = FakeEngine()
+    bridge.new_game(1, 9, 6.5, "japanese", "B", "ai:human", {})
+    bridge._stream = stream
+    return bridge
+
+
+def events(session):
+    return [json.loads(line) for line in session._stream.getvalue().strip().split("\n") if line]
+
+
+def last_state(session):
+    return [e for e in events(session) if e["event"] == "state"][-1]
+
+
+def both_pass(session):
+    """Passes for both sides directly on the game, bypassing turn ownership."""
+    for player in ("B", "W"):
+        session.game.play(Move(coords=None, player=player))
+
+
+class TestEnteringScoring:
+    def test_a_fresh_game_is_being_played(self, session):
+        assert session._status == "playing"
+        assert last_state(session)["status"] == "playing"
+        assert "scoring" not in last_state(session)
+
+    def test_one_pass_is_not_the_end(self, session):
+        session.game.play(Move(coords=None, player="B"))
+        assert not session._two_passes_played()
+
+    def test_two_passes_end_the_game(self, session):
+        both_pass(session)
+        assert session._two_passes_played()
+
+    def test_entering_scoring_publishes_a_count(self, session):
+        both_pass(session)
+        session._enter_scoring()
+        session._emit_state(9)
+        state = last_state(session)
+        assert state["status"] == "scoring"
+        assert state["scoring"]["result"] is not None
+        assert state["scoring"]["dead_stones"] == []
+
+    def test_the_komi_reaches_the_count(self, session):
+        both_pass(session)
+        session._enter_scoring()
+        assert session._count()["komi"] == 6.5
+        # An empty board is nobody's territory, so komi alone decides it.
+        assert session._count()["result"] == "W+6.5"
+
+
+class TestMarkingDeadStones:
+    def _position(self, session):
+        """A white stone stranded in Black's corner, alive on the board but doomed.
+
+            W . B . . .
+            . . B . . .
+            B B B . . .
+
+        The white stone keeps two liberties, so it is not captured — it is exactly
+        the kind of group the players have to agree is dead.
+        """
+        size = 9
+        wall = [(0, 2), (1, 2), (2, 2), (2, 1), (2, 0)]
+        for row, col in wall:
+            session.game.play(Move(coords=(col, size - 1 - row), player="B"))
+        session.game.play(Move(coords=(0, size - 1), player="W"))
+        assert (0, 0) in __import__("serialize").stone_map(session.game)
+        session._enter_scoring()
+        session._stream.truncate(0)
+        session._stream.seek(0)
+
+    def test_marking_a_group_dead_changes_the_count(self, session):
+        self._position(session)
+        before = session._count()
+        # Alive, the white stone makes its corner neutral.
+        assert before["territory"]["B"] < session._count()["territory"]["B"] + 1
+        session.toggle_dead(2, 0, 0)
+        after = session._count()
+        # Dead, it hands over the three points it was denying, plus itself.
+        assert after["territory"]["B"] == before["territory"]["B"] + 4
+        assert after["black"] == before["black"] + 5
+        assert last_state(session)["scoring"]["dead_stones"] == [{"row": 0, "col": 0}]
+
+    def test_marking_it_again_brings_it_back_to_life(self, session):
+        self._position(session)
+        session.toggle_dead(2, 0, 0)
+        session.toggle_dead(3, 0, 0)
+        assert session._dead == set()
+        assert last_state(session)["scoring"]["dead_stones"] == []
+
+    def test_clicking_an_empty_point_is_refused(self, session):
+        self._position(session)
+        with pytest.raises(CommandError) as exc:
+            session.toggle_dead(2, 5, 5)
+        assert exc.value.code == "no_group"
+
+    def test_marking_is_refused_while_the_game_is_on(self, session):
+        with pytest.raises(CommandError) as exc:
+            session.toggle_dead(2, 0, 0)
+        assert exc.value.code == "not_scoring"
+
+
+class TestLeavingScoring:
+    def test_accepting_the_score_ends_the_game(self, session):
+        both_pass(session)
+        session._enter_scoring()
+        session.accept_score(5)
+        state = last_state(session)
+        assert state["status"] == "finished"
+        assert state["result"] == "W+6.5"
+
+    def test_resuming_takes_back_the_last_pass(self, session):
+        both_pass(session)
+        session._enter_scoring()
+        moves_before = session.game.current_node.depth
+        session.resume_game(6)
+        assert session._status == "playing"
+        assert session.game.current_node.depth == moves_before - 1
+        assert session._dead == set()
+
+    def test_playing_is_refused_while_counting(self, session):
+        both_pass(session)
+        session._enter_scoring()
+        with pytest.raises(CommandError) as exc:
+            session.play(7, 4, 4)
+        assert exc.value.code == "not_playing"
+
+    def test_a_new_game_leaves_scoring_behind(self, session):
+        both_pass(session)
+        session._enter_scoring()
+        session._dead = {(0, 0)}
+        session.new_game(8, 9, 6.5, "japanese", "B", "ai:human", {})
+        assert session._status == "playing"
+        assert session._dead == set()

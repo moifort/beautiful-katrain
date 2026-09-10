@@ -9,7 +9,13 @@ public struct SidebarView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let state = session.state {
+            if let state = session.state, let scoring = state.scoring {
+                ScoringPanel(
+                    detail: scoring,
+                    onResume: { session.resumeGame() },
+                    onAccept: { session.acceptScore() }
+                )
+            } else if let state = session.state {
                 turnRow(state)
                 divider
                 scoreSection(state)

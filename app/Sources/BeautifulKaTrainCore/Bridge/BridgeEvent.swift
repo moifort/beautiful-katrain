@@ -37,7 +37,34 @@ public struct Captures: Codable, Sendable, Hashable {
 
 public enum GameStatus: String, Codable, Sendable {
     case playing
+    /// Both players have passed; the dead stones are being agreed on.
+    case scoring
     case finished
+}
+
+public struct TerritoryPoint: Codable, Sendable, Hashable {
+    public let row: Int
+    public let col: Int
+    public let color: PlayerColor
+
+    public var point: Point { Point(row: row, col: col) }
+}
+
+/// The count as it stands, recomputed by the bridge on every change.
+public struct ScoringDetail: Codable, Sendable {
+    public let black: Double
+    public let white: Double
+    public let komi: Double
+    public let territory: [String: Int]
+    public let result: String
+    public let points: [TerritoryPoint]
+    public let deadStones: [Point]
+
+    public func territory(for color: PlayerColor) -> Int {
+        territory[color.rawValue] ?? 0
+    }
+
+    public var deadPoints: Set<Point> { Set(deadStones) }
 }
 
 /// The whole board state, as the bridge sees it. The app never derives it.
@@ -53,8 +80,12 @@ public struct GameState: Codable, Sendable {
     public let humanColor: PlayerColor
     public let status: GameStatus
     public let result: String?
+    public let scoring: ScoringDetail?
 
     public var isHumanTurn: Bool { status == .playing && toPlay == humanColor }
+
+    /// Points the player can act on: play a stone, or mark a group dead.
+    public var acceptsClicks: Bool { status == .playing || status == .scoring }
 }
 
 public enum BridgeEvent: Sendable {

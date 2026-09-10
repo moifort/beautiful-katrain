@@ -57,10 +57,26 @@ def last_move(game) -> Optional[Dict[str, int]]:
     return to_display_coords(move.coords, board_size(game))
 
 
-def game_state(game, human_color: str) -> Dict[str, Any]:
+def stone_map(game) -> Dict[tuple, str]:
+    """Stones keyed by display coordinate, the shape the scoring module expects."""
+    size = board_size(game)
+    placed = {}
+    for move in game.stones:
+        point = to_display_coords(move.coords, size)
+        placed[(point["row"], point["col"])] = move.player
+    return placed
+
+
+def game_state(
+    game,
+    human_color: str,
+    status: str = "playing",
+    result: Optional[str] = None,
+    scoring: Optional[Dict[str, Any]] = None,
+    dead: Optional[List[tuple]] = None,
+) -> Dict[str, Any]:
     node = game.current_node
-    result = game.end_result
-    return {
+    payload = {
         "size": board_size(game),
         "stones": stones(game),
         "to_play": node.next_player,
@@ -70,6 +86,17 @@ def game_state(game, human_color: str) -> Dict[str, Any]:
         "score_history": score_history(game),
         "score_lead": node.score,
         "human_color": human_color,
-        "status": "finished" if result else "playing",
+        "status": status,
         "result": result,
     }
+    if scoring is not None:
+        payload["scoring"] = {
+            "black": scoring["black"],
+            "white": scoring["white"],
+            "komi": scoring["komi"],
+            "territory": scoring["territory"],
+            "result": scoring["result"],
+            "points": scoring["points"],
+            "dead_stones": [{"row": r, "col": c} for r, c in sorted(dead or [])],
+        }
+    return payload

@@ -33,6 +33,13 @@ public struct BridgeCommand: Encodable, Sendable {
         BridgeCommand(id: id, cmd: "play", row: row, col: col)
     }
 
+    public static func toggleDead(id: Int, row: Int, col: Int) -> BridgeCommand {
+        BridgeCommand(id: id, cmd: "toggle_dead", row: row, col: col)
+    }
+
+    public static func acceptScore(id: Int) -> BridgeCommand { BridgeCommand(id: id, cmd: "accept_score") }
+    public static func resumeGame(id: Int) -> BridgeCommand { BridgeCommand(id: id, cmd: "resume_game") }
+
     public static func pass(id: Int) -> BridgeCommand { BridgeCommand(id: id, cmd: "pass") }
     public static func undo(id: Int) -> BridgeCommand { BridgeCommand(id: id, cmd: "undo") }
     public static func resign(id: Int) -> BridgeCommand { BridgeCommand(id: id, cmd: "resign") }

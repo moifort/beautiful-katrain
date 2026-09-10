@@ -136,10 +136,36 @@ class TestGameState:
         assert state["to_play"] == "W"
         assert state["move_number"] == 1
 
-    def test_resignation_ends_the_game(self):
+    def test_the_session_decides_the_status(self):
+        """serialize reports the status it is given; it does not judge the game."""
         game = make_game()
         play(game, 4, 4)
-        game.current_node.end_state = "B+R"
-        state = serialize.game_state(game, human_color="B")
+        state = serialize.game_state(game, human_color="B", status="finished", result="B+R")
         assert state["status"] == "finished"
         assert state["result"] == "B+R"
+
+    def test_no_scoring_block_while_playing(self):
+        assert "scoring" not in serialize.game_state(make_game(), human_color="B")
+
+    def test_scoring_block_carries_the_count_and_the_dead_stones(self):
+        game = make_game()
+        play(game, 0, 1)  # B
+        play(game, 0, 0)  # W, into the corner
+        counted = {
+            "black": 2, "white": 0, "komi": 0.5,
+            "territory": {"B": 1, "W": 0}, "result": "B+1.5",
+            "points": [{"row": 0, "col": 0, "color": "B"}],
+        }
+        state = serialize.game_state(
+            game, human_color="B", status="scoring", scoring=counted, dead=[(0, 0)]
+        )
+        assert state["status"] == "scoring"
+        assert state["scoring"]["result"] == "B+1.5"
+        assert state["scoring"]["dead_stones"] == [{"row": 0, "col": 0}]
+        assert state["scoring"]["points"] == [{"row": 0, "col": 0, "color": "B"}]
+
+    def test_stone_map_is_keyed_by_display_coordinates(self):
+        game = make_game()
+        play(game, 0, 0)
+        play(game, 8, 8)
+        assert serialize.stone_map(game) == {(0, 0): "B", (8, 8): "W"}

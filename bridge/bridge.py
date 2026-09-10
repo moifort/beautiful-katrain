@@ -37,6 +37,12 @@ def _dispatch(session: BridgeSession, writer: EventWriter, command: Dict[str, An
         session.submit(session.undo, command_id)
     elif name == "resign":
         session.submit(session.resign, command_id)
+    elif name == "toggle_dead":
+        session.submit(session.toggle_dead, command_id, int(command["row"]), int(command["col"]))
+    elif name == "accept_score":
+        session.submit(session.accept_score, command_id)
+    elif name == "resume_game":
+        session.submit(session.resume_game, command_id)
     elif name == "state":
         session.submit(session.state, command_id)
     else:

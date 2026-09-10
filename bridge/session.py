@@ -23,6 +23,7 @@ from katrain.core.engine import KataGoEngine
 from katrain.core.game import Game, IllegalMoveException
 from pysgf import Move
 
+import scoring
 import serialize
 from protocol import CommandError, to_engine_coords
 
@@ -87,6 +88,8 @@ class BridgeSession(KaTrainBase):
         self._emitted_scores: Dict[int, float] = {}
         self._ai_pending = False
         self._stopping = False
+        self._status = "playing"  # playing | scoring | finished
+        self._dead: set = set()
         super().__init__()
         self.controls = NullControls(self._log_stderr)
 
@@ -151,6 +154,14 @@ class BridgeSession(KaTrainBase):
         if self.game is None:
             return
         self._emit_new_scores()
+        if self._status == "scoring" and not self._dead:
+            # The ownership map often lands after the second pass; take it when it
+            # arrives rather than leaving the player with nothing proposed.
+            suggested = self._suggested_dead()
+            if suggested:
+                self._dead = set(suggested)
+                self._emit_state()
+            return
         self._maybe_play_ai_move()
 
     #: Score changes smaller than this are not worth an event. KataGo keeps refining
@@ -194,12 +205,99 @@ class BridgeSession(KaTrainBase):
             return
         generate_ai_move(self.game, strategy, settings)
         self._writer.emit("thinking", None, value=False)
+        if self._two_passes_played():
+            self._enter_scoring()
         self._emit_state()
 
     # -- commands ------------------------------------------------------------
 
     def _emit_state(self, command_id: Optional[int] = None) -> None:
-        self._writer.emit("state", command_id, **serialize.game_state(self.game, self._human_color))
+        result = self.game.current_node.end_state if self._status == "finished" else None
+        counted = self._count() if self._status in ("scoring", "finished") else None
+        if counted is not None and result is None and self._status == "finished":
+            result = counted["result"]
+        self._writer.emit(
+            "state",
+            command_id,
+            **serialize.game_state(
+                self.game,
+                self._human_color,
+                status=self._status,
+                result=result,
+                scoring=counted,
+                dead=sorted(self._dead),
+            ),
+        )
+
+    # -- end of game ---------------------------------------------------------
+
+    def _count(self) -> Dict[str, Any]:
+        """Counts the position as it currently stands, dead stones included."""
+        board = serialize.stone_map(self.game)
+        captures = serialize.captures(self.game)
+        return scoring.score(
+            size=serialize.board_size(self.game),
+            stones=board,
+            dead=self._dead,
+            komi=self.game.root.komi,
+            captures=captures,
+            rules=str(self.game.root.ruleset or "japanese"),
+        )
+
+    def _two_passes_played(self) -> bool:
+        node = self.game.current_node
+        return bool(node.is_pass and node.parent is not None and node.parent.is_pass)
+
+    def _enter_scoring(self) -> None:
+        """Two passes: stop playing and propose which stones look dead."""
+        self._status = "scoring"
+        self._ai_pending = False
+        self._dead = set(self._suggested_dead())
+        self._writer.emit("thinking", None, value=False)
+
+    def _suggested_dead(self):
+        node = self.game.current_node
+        return scoring.suggest_dead(
+            size=serialize.board_size(self.game),
+            stones=serialize.stone_map(self.game),
+            ownership=node.ownership,
+        )
+
+    def toggle_dead(self, command_id, row, col):
+        """Flips the whole group under a point between dead and alive."""
+        if self._status != "scoring":
+            raise CommandError("not_scoring", "the game is not being counted")
+        board = serialize.stone_map(self.game)
+        size = serialize.board_size(self.game)
+        group = scoring.group_at(board, size, (row, col))
+        if not group:
+            raise CommandError("no_group", "there is no stone there")
+        if group & self._dead:
+            self._dead -= group
+        else:
+            self._dead |= group
+        self._emit_state(command_id)
+
+    def accept_score(self, command_id):
+        if self._status != "scoring":
+            raise CommandError("not_scoring", "the game is not being counted")
+        self._status = "finished"
+        self.game.current_node.end_state = self._count()["result"]
+        self._emit_state(command_id)
+
+    def resume_game(self, command_id):
+        """Takes back the last pass so play can continue."""
+        if self._status != "scoring":
+            raise CommandError("not_scoring", "the game is not being counted")
+        self._status = "playing"
+        self._dead = set()
+        self.game.undo(1)
+        if self.players_info[self.game.current_node.next_player].ai:
+            self._ai_pending = True
+            self._writer.emit("thinking", None, value=True)
+            self._maybe_play_ai_move()
+        else:
+            self._emit_state(command_id)
 
     def _size(self) -> int:
         return serialize.board_size(self.game)
@@ -214,6 +312,8 @@ class BridgeSession(KaTrainBase):
         if ai_settings:
             self.config(f"ai/{ai_strategy}").update(ai_settings)
         self._emitted_scores.clear()
+        self._dead = set()
+        self._status = "playing"
         self.game = Game(self, self._engine, game_properties={"SZ": size, "KM": komi, "RU": rules})
         self._ai_pending = self.players_info[self.game.current_node.next_player].ai
         if self._ai_pending:
@@ -222,6 +322,8 @@ class BridgeSession(KaTrainBase):
 
     def play(self, command_id, row, col):
         self._require_game()
+        if self._status != "playing":
+            raise CommandError("not_playing", "the game is over")
         node = self.game.current_node
         if self.players_info[node.next_player].ai:
             raise CommandError("not_your_turn", "it is the AI's turn")
@@ -234,6 +336,8 @@ class BridgeSession(KaTrainBase):
 
     def play_pass(self, command_id):
         self._require_game()
+        if self._status != "playing":
+            raise CommandError("not_playing", "the game is over")
         node = self.game.current_node
         if self.players_info[node.next_player].ai:
             raise CommandError("not_your_turn", "it is the AI's turn")
@@ -241,6 +345,10 @@ class BridgeSession(KaTrainBase):
         self._after_human_move(command_id)
 
     def _after_human_move(self, command_id) -> None:
+        if self._two_passes_played():
+            self._enter_scoring()
+            self._emit_state(command_id)
+            return
         self._emit_state(command_id)
         if self.game.end_result:
             return
@@ -252,6 +360,8 @@ class BridgeSession(KaTrainBase):
     def undo(self, command_id):
         """Steps back until it is the human's turn again, two moves in the usual case."""
         self._require_game()
+        self._status = "playing"
+        self._dead = set()
         self._ai_pending = False
         steps = 0
         while steps < 2 and self.game.current_node.parent is not None:
