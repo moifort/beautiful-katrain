@@ -8,7 +8,7 @@ public struct SidebarView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             if let state = session.state, let scoring = state.scoring {
                 ScoringPanel(detail: scoring) {
                     NotificationCenter.default.post(name: .beautifulKaTrainNewGameRequested, object: nil)
@@ -30,7 +30,8 @@ public struct SidebarView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(14)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Theme.sidebarVeil)
         .help(session.engineDescription ?? "")
@@ -41,33 +42,39 @@ public struct SidebarView: View {
     }
 
     private func turnRow(_ state: GameState) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             TurnIndicator(color: state.toPlay, isThinking: session.thinking.isVisible)
             Text(Theme.name(state.toPlay))
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.primaryText)
             Spacer(minLength: 0)
-            Text(trailingLabel(state))
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.secondaryText)
+            leadFigure
         }
     }
 
-    /// Only shown when there is something to say: the result at the end, or that the
-    /// AI is working. The move number was noise.
-    private func trailingLabel(_ state: GameState) -> String {
-        if state.status == .finished { return state.result ?? "terminée" }
-        return session.thinking.isVisible ? "réfléchit…" : ""
+    /// The current lead, always on screen. That the AI is thinking is carried by the
+    /// ring around the stone, so the figure never has to give up its place.
+    private var leadFigure: some View {
+        Group {
+            if let lead = session.currentLead {
+                Text(ScoreChart.label(for: lead))
+                    .font(.system(size: 14))
+                    .foregroundStyle(lead >= 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
+                    .contentTransition(.numericText())
+            } else {
+                Text("—")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+        }
+        .monospacedDigit()
+        .lineLimit(1)
     }
 
     /// The chart carries its own figure now, written at the tip of the last bar, so
     /// there is no separate readout above it.
     private func scoreSection(_ state: GameState) -> some View {
-        ScoreChart(
-            scores: session.scoresFromPlayerSide,
-            moveNumber: state.moveNumber,
-            annotation: session.currentLead
-        )
+        ScoreChart(scores: session.scoresFromPlayerSide, moveNumber: state.moveNumber)
     }
 
     /// What is already known per player while the game is on. Territory only exists

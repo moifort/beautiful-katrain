@@ -70,8 +70,8 @@ struct ScoreChartLayoutTests {
     }
 }
 
-@Suite("Annotation de la dernière barre")
-struct ScoreChartAnnotationTests {
+@Suite("Mise en forme du chiffre de score")
+struct ScoreLabelTests {
     @Test("Le chiffre est signé, avec une virgule")
     func label() {
         #expect(ScoreChart.label(for: 2.4) == "+2,4")
@@ -85,28 +85,9 @@ struct ScoreChartAnnotationTests {
         #expect(ScoreChart.label(for: -0.04) == "0")
     }
 
-    @Test("Le chiffre monte avec une avance et descend avec un retard")
-    func offsetFollowsTheBar() {
-        let half: CGFloat = 18
-        let total: CGFloat = 36
-        let ahead = ScoreChart.labelOffset(value: 5, scale: 5, half: half, total: total)
-        let behind = ScoreChart.labelOffset(value: -5, scale: 5, half: half, total: total)
-        #expect(ahead < behind)
-    }
-
-    @Test("Le chiffre reste dans le graphe aux extrêmes")
-    func offsetStaysInside() {
-        let total: CGFloat = 36
-        for value in [-99.0, -5, 0, 5, 99] {
-            let offset = ScoreChart.labelOffset(value: value, scale: 5, half: 18, total: total)
-            #expect(offset >= 0)
-            #expect(offset <= total - 14)
-        }
-    }
-
-    @Test("Une partie nulle place le chiffre près du milieu")
-    func evenGameSitsNearTheMiddle() {
-        let offset = ScoreChart.labelOffset(value: 0, scale: 5, half: 18, total: 36)
-        #expect(abs(offset - 11) < 6)
+    @Test("Les grands écarts restent lisibles")
+    func wideMargins() {
+        #expect(ScoreChart.label(for: 132.5) == "+132,5")
+        #expect(ScoreChart.label(for: -7) == "\u{2212}7,0")
     }
 }
