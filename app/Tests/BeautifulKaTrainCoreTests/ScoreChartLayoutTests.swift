@@ -140,22 +140,25 @@ struct ScoreLabelPlacementTests {
 @Suite("Position horizontale du chiffre")
 struct ScoreLabelHorizontalTests {
     let total: CGFloat = 170
+    let step = ScoreChartLayout.minimumBarWidth + ScoreChartLayout.spacing
 
-    @Test("En début de partie le chiffre suit la barre, à gauche")
-    func followsTheFirstBar() {
-        #expect(ScoreChart.labelX(barCount: 1, total: total) == 0)
+    @Test("Le chiffre se pose après la dernière barre, jamais dessus")
+    func sitsPastTheLastBar() {
+        for count in [1, 3, 12, 25] {
+            let x = ScoreChart.labelX(barCount: count, total: total)
+            let lastBarRightEdge = CGFloat(count - 1) * step + ScoreChartLayout.minimumBarWidth
+            #expect(x >= lastBarRightEdge)
+        }
     }
 
     @Test("Le chiffre avance avec les coups")
     func movesRightAsTheGameGoes() {
-        let early = ScoreChart.labelX(barCount: 3, total: total)
-        let later = ScoreChart.labelX(barCount: 10, total: total)
-        #expect(early < later)
+        #expect(ScoreChart.labelX(barCount: 3, total: total) < ScoreChart.labelX(barCount: 10, total: total))
     }
 
     @Test("Un graphe plein cale le chiffre au bord droit")
     func fullChartPinsToTheRight() {
-        #expect(ScoreChart.labelX(barCount: 40, total: total) == total - 32)
+        #expect(ScoreChart.labelX(barCount: 200, total: total) == total - ScoreChart.labelWidth)
     }
 
     @Test("Le chiffre ne sort jamais du graphe")
@@ -163,7 +166,18 @@ struct ScoreLabelHorizontalTests {
         for count in [0, 1, 5, 27, 200] {
             let x = ScoreChart.labelX(barCount: count, total: total)
             #expect(x >= 0)
-            #expect(x <= total - 32)
+            #expect(x <= total - ScoreChart.labelWidth)
         }
+    }
+
+    @Test("Les barres laissent la place au chiffre")
+    func barsLeaveRoom() {
+        // With the gutter reserved, the bars a full chart can hold never reach the
+        // figure's column.
+        let chartWidth = total - ScoreChart.labelWidth - ScoreChart.labelGap
+        let count = ScoreChartLayout.maximumBarCount(width: chartWidth)
+        let lastBarRightEdge = CGFloat(count - 1) * step + ScoreChartLayout.minimumBarWidth
+        #expect(lastBarRightEdge <= chartWidth)
+        #expect(ScoreChart.labelX(barCount: count, total: total) >= lastBarRightEdge)
     }
 }

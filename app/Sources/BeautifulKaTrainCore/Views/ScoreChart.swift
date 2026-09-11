@@ -4,20 +4,19 @@ import SwiftUI
 ///
 /// Read from the human player's side: above the middle they are ahead and the bar
 /// is white, below it they are behind and it turns red. No axis, no midline, no
-/// legend — the current value is written small at the tip of the last bar, where the
-/// eye already is.
+/// legend — the current value is written small just past the last bar.
 public struct ScoreChart: View {
     public let scores: [Int: Double]
     public let moveNumber: Int
-    /// Value to write at the tip of the last bar. Nil leaves the chart bare.
+    /// Value to write next to the last bar. Nil leaves the chart bare.
     public let annotation: Double?
     public let height: CGFloat
 
     private static let labelHeight: CGFloat = 12
     /// Wide enough for the longest figure a game can produce, e.g. "132,5".
-    private static let labelWidth: CGFloat = 32
-    /// Gap between the tip of the bar and the figure above or below it.
-    private static let labelGap: CGFloat = 2
+    static let labelWidth: CGFloat = 32
+    /// Breathing room between the last bar and the figure.
+    static let labelGap: CGFloat = 4
 
     public init(
         scores: [Int: Double],
@@ -33,7 +32,12 @@ public struct ScoreChart: View {
 
     public var body: some View {
         GeometryReader { proxy in
-            let bars = ScoreChartLayout.bars(scores: scores, upTo: moveNumber, width: proxy.size.width)
+            // The bars stop short of the right edge so the figure always has room of
+            // its own; drawn over them it was unreadable.
+            let chartWidth = annotation == nil
+                ? proxy.size.width
+                : max(1, proxy.size.width - Self.labelWidth - Self.labelGap)
+            let bars = ScoreChartLayout.bars(scores: scores, upTo: moveNumber, width: chartWidth)
             let scale = ScoreChartLayout.scale(for: bars)
             let half = proxy.size.height / 2
 
@@ -43,7 +47,7 @@ public struct ScoreChart: View {
                         BarShape(bar: bar, scale: scale, half: half)
                     }
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+                .frame(width: chartWidth, height: proxy.size.height, alignment: .leading)
 
                 if let annotation {
                     Text(Self.label(for: annotation))
@@ -53,7 +57,7 @@ public struct ScoreChart: View {
                         .foregroundStyle(
                             annotation >= 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent
                         )
-                        .frame(width: Self.labelWidth, height: Self.labelHeight)
+                        .frame(width: Self.labelWidth, height: Self.labelHeight, alignment: .leading)
                         .offset(
                             x: Self.labelX(barCount: bars.count, total: proxy.size.width),
                             y: Self.labelOffset(
@@ -71,25 +75,19 @@ public struct ScoreChart: View {
         .accessibilityLabel("Graphe de l'avantage au score")
     }
 
-    /// Sits just clear of the tip of the last bar — above it when the player is
-    /// ahead, below it when behind — and never leaves the chart.
+    /// Just past the right edge of the last bar, never over it.
+    static func labelX(barCount: Int, total: CGFloat) -> CGFloat {
+        let step = ScoreChartLayout.minimumBarWidth + ScoreChartLayout.spacing
+        let rightEdge = CGFloat(max(0, barCount - 1)) * step + ScoreChartLayout.minimumBarWidth
+        return min(max(0, rightEdge + labelGap), max(0, total - labelWidth))
+    }
+
+    /// Level with the tip of the last bar, kept inside the chart.
     static func labelOffset(value: Double, scale: Double, half: CGFloat, total: CGFloat) -> CGFloat {
         let magnitude = CGFloat(min(1, abs(value) / scale)) * half
         let length = max(ScoreChartLayout.minimumBarWidth, magnitude)
-        let placed =
-            value >= 0
-            ? half - length - labelGap - labelHeight
-            : half + length + labelGap
-        return min(max(0, placed), max(0, total - labelHeight))
-    }
-
-    /// Horizontal position of the figure: centred on the last bar, pulled back when
-    /// that would push it off the right edge. Early in a game the last bar is still
-    /// near the left, and the figure follows it rather than sitting alone at the end.
-    static func labelX(barCount: Int, total: CGFloat) -> CGFloat {
-        let step = ScoreChartLayout.minimumBarWidth + ScoreChartLayout.spacing
-        let centre = CGFloat(max(0, barCount - 1)) * step + ScoreChartLayout.minimumBarWidth / 2
-        return min(max(0, centre - labelWidth / 2), max(0, total - labelWidth))
+        let tip = value >= 0 ? half - length : half + length
+        return min(max(0, tip - labelHeight / 2), max(0, total - labelHeight))
     }
 
     /// The bare magnitude, with a French decimal comma. No sign: the colour already
