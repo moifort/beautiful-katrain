@@ -72,10 +72,8 @@ public struct GameWindow: View {
             if let state = session.state {
                 TurnIndicator(color: state.toPlay, isThinking: session.thinking.isVisible, diameter: 13)
                 if let lead = session.currentLead, abs(lead) >= 0.05 {
-                    Image(systemName: lead > 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                        .font(.system(size: 9))
-                        .foregroundStyle(lead > 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
-                    Text(String(format: "%.1f", abs(lead)).replacingOccurrences(of: ".", with: ","))
+                    // No arrow: the colour already says which way it goes.
+                    Text(ScoreChart.label(for: lead))
                         .font(.system(size: 13))
                         .foregroundStyle(lead > 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
                         .monospacedDigit()
@@ -84,5 +82,8 @@ public struct GameWindow: View {
                     .frame(width: 76)
             }
         }
+        // The capsule's own inset is tight on the left; the stone needs room to
+        // breathe against its rounded edge.
+        .padding(.leading, 6)
     }
 }

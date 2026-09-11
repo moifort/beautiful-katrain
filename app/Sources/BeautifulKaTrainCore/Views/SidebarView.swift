@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct SidebarView: View {
     @Bindable public var session: GameSession
+    @State private var isConfirmingResignation = false
 
     public init(session: GameSession) {
         self.session = session
@@ -48,33 +49,17 @@ public struct SidebarView: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.primaryText)
             Spacer(minLength: 0)
-            leadFigure
         }
     }
 
-    /// The current lead, always on screen. That the AI is thinking is carried by the
-    /// ring around the stone, so the figure never has to give up its place.
-    private var leadFigure: some View {
-        Group {
-            if let lead = session.currentLead {
-                Text(ScoreChart.label(for: lead))
-                    .font(.system(size: 14))
-                    .foregroundStyle(lead >= 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
-                    .contentTransition(.numericText())
-            } else {
-                Text("—")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.secondaryText)
-            }
-        }
-        .monospacedDigit()
-        .lineLimit(1)
-    }
-
-    /// The chart carries its own figure now, written at the tip of the last bar, so
-    /// there is no separate readout above it.
+    /// The chart carries its own figure, written small at the tip of the last bar,
+    /// so there is no separate readout.
     private func scoreSection(_ state: GameState) -> some View {
-        ScoreChart(scores: session.scoresFromPlayerSide, moveNumber: state.moveNumber)
+        ScoreChart(
+            scores: session.scoresFromPlayerSide,
+            moveNumber: state.moveNumber,
+            annotation: session.currentLead
+        )
     }
 
     /// What is already known per player while the game is on. Territory only exists
@@ -124,15 +109,35 @@ public struct SidebarView: View {
                 Label("Annuler", systemImage: "arrow.uturn.backward")
                     .frame(maxWidth: .infinity)
             }
+            .disabled(!session.canAct)
+
             Button {
                 session.passTurn()
             } label: {
                 Label("Passer", systemImage: "forward.end")
                     .frame(maxWidth: .infinity)
             }
+            .disabled(!session.canAct)
+
+            // Available even while the AI is thinking — you give up when you decide
+            // to, not when it is your turn. Confirmed because it ends the game.
+            Button(role: .destructive) {
+                isConfirmingResignation = true
+            } label: {
+                Label("Abandonner", systemImage: "flag")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(state.status != .playing)
         }
         .buttonStyle(.glass)
         .controlSize(.large)
-        .disabled(!session.canAct)
+        .confirmationDialog(
+            "Abandonner la partie ?",
+            isPresented: $isConfirmingResignation,
+            titleVisibility: .visible
+        ) {
+            Button("Abandonner", role: .destructive) { session.resign() }
+            Button("Continuer", role: .cancel) {}
+        }
     }
 }

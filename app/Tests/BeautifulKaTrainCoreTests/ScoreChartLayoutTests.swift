@@ -72,10 +72,15 @@ struct ScoreChartLayoutTests {
 
 @Suite("Mise en forme du chiffre de score")
 struct ScoreLabelTests {
-    @Test("Le chiffre est signé, avec une virgule")
+    @Test("Le chiffre est nu, sans signe : la couleur porte le sens")
     func label() {
-        #expect(ScoreChart.label(for: 2.4) == "+2,4")
-        #expect(ScoreChart.label(for: -0.3) == "\u{2212}0,3")
+        #expect(ScoreChart.label(for: 2.4) == "2,4")
+        #expect(ScoreChart.label(for: -0.3) == "0,3")
+    }
+
+    @Test("Une avance et un retard de même ampleur s'écrivent pareil")
+    func signIsNotWritten() {
+        #expect(ScoreChart.label(for: 7.5) == ScoreChart.label(for: -7.5))
     }
 
     @Test("Une partie serrée affiche zéro sans signe")
@@ -87,7 +92,78 @@ struct ScoreLabelTests {
 
     @Test("Les grands écarts restent lisibles")
     func wideMargins() {
-        #expect(ScoreChart.label(for: 132.5) == "+132,5")
-        #expect(ScoreChart.label(for: -7) == "\u{2212}7,0")
+        #expect(ScoreChart.label(for: 132.5) == "132,5")
+        #expect(ScoreChart.label(for: -7) == "7,0")
+    }
+}
+
+@Suite("Position du chiffre sur la dernière barre")
+struct ScoreLabelPlacementTests {
+    let half: CGFloat = 20
+    let total: CGFloat = 40
+
+    @Test("Une avance place le chiffre au-dessus de la barre")
+    func aheadSitsAbove() {
+        let offset = ScoreChart.labelOffset(value: 4, scale: 5, half: half, total: total)
+        #expect(offset < half)
+    }
+
+    @Test("Un retard place le chiffre sous la barre")
+    func behindSitsBelow() {
+        let offset = ScoreChart.labelOffset(value: -4, scale: 5, half: half, total: total)
+        #expect(offset > half)
+    }
+
+    @Test("Plus l'avance est grande, plus le chiffre monte")
+    func offsetFollowsTheBar() {
+        let small = ScoreChart.labelOffset(value: 1, scale: 5, half: half, total: total)
+        let large = ScoreChart.labelOffset(value: 5, scale: 5, half: half, total: total)
+        #expect(large < small)
+    }
+
+    @Test("Le chiffre ne sort jamais du graphe")
+    func staysInside() {
+        for value in [-500.0, -5, -0.1, 0, 0.1, 5, 500] {
+            let offset = ScoreChart.labelOffset(value: value, scale: 5, half: half, total: total)
+            #expect(offset >= 0)
+            #expect(offset <= total - 12)
+        }
+    }
+
+    @Test("Une partie serrée garde le chiffre près du milieu")
+    func closeGameSitsNearTheMiddle() {
+        let offset = ScoreChart.labelOffset(value: 0, scale: 5, half: half, total: total)
+        #expect(abs(offset - half) < half)
+    }
+}
+
+@Suite("Position horizontale du chiffre")
+struct ScoreLabelHorizontalTests {
+    let total: CGFloat = 170
+
+    @Test("En début de partie le chiffre suit la barre, à gauche")
+    func followsTheFirstBar() {
+        #expect(ScoreChart.labelX(barCount: 1, total: total) == 0)
+    }
+
+    @Test("Le chiffre avance avec les coups")
+    func movesRightAsTheGameGoes() {
+        let early = ScoreChart.labelX(barCount: 3, total: total)
+        let later = ScoreChart.labelX(barCount: 10, total: total)
+        #expect(early < later)
+    }
+
+    @Test("Un graphe plein cale le chiffre au bord droit")
+    func fullChartPinsToTheRight() {
+        #expect(ScoreChart.labelX(barCount: 40, total: total) == total - 32)
+    }
+
+    @Test("Le chiffre ne sort jamais du graphe")
+    func staysInside() {
+        for count in [0, 1, 5, 27, 200] {
+            let x = ScoreChart.labelX(barCount: count, total: total)
+            #expect(x >= 0)
+            #expect(x <= total - 32)
+        }
     }
 }

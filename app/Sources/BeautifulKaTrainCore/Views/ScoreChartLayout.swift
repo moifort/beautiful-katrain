@@ -13,8 +13,8 @@ public enum ScoreChartLayout {
         public let isCurrent: Bool
     }
 
-    public static let minimumBarWidth: CGFloat = 3.5
-    public static let spacing: CGFloat = 2.7
+    public static let minimumBarWidth: CGFloat = 2.8
+    public static let spacing: CGFloat = 2.2
 
     public static func maximumBarCount(width: CGFloat) -> Int {
         guard width > 0 else { return 1 }
