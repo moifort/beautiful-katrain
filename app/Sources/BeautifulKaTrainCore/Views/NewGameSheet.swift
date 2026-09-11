@@ -12,6 +12,19 @@ public struct NewGameSheet: View {
 
     private var mode: AIMode { AIMode.mode(for: draft.aiStrategy) }
 
+    private func currentValue(_ setting: AIMode.Setting) -> Double {
+        draft.value(for: mode)
+            ?? session.settingValue(for: mode)
+            ?? (setting.range.lowerBound + setting.range.upperBound) / 2
+    }
+
+    private func settingBinding(_ setting: AIMode.Setting) -> Binding<Double> {
+        Binding(
+            get: { currentValue(setting) },
+            set: { draft.setValue($0, for: mode) }
+        )
+    }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Nouvelle partie")
@@ -36,10 +49,15 @@ public struct NewGameSheet: View {
                         Text(mode.name).tag(mode.id)
                     }
                 }
-                .onChange(of: draft.aiStrategy) { _, _ in
-                    // Each mode has its own setting; start from the value the bridge
-                    // already holds for it rather than carrying the previous one over.
-                    draft.aiSettingValue = session.settingValue(for: mode) ?? draft.aiSettingValue
+                .onChange(of: draft.aiStrategy) { _, newValue in
+                    // Each mode keeps its own setting; on switching, start from what
+                    // was last chosen for it, or from what the bridge holds.
+                    let switched = AIMode.mode(for: newValue)
+                    if draft.value(for: switched) == nil,
+                        let value = session.settingValue(for: switched)
+                    {
+                        draft.setValue(value, for: switched)
+                    }
                 }
 
                 if !mode.summary.isEmpty {
@@ -52,12 +70,8 @@ public struct NewGameSheet: View {
                 if let setting = mode.setting {
                     LabeledContent(setting.label) {
                         HStack {
-                            Slider(
-                                value: $draft.aiSettingValue,
-                                in: setting.range,
-                                step: setting.step
-                            )
-                            Text(setting.describe(draft.aiSettingValue))
+                            Slider(value: settingBinding(setting), in: setting.range, step: setting.step)
+                            Text(setting.describe(currentValue(setting)))
                                 .font(.system(size: 12))
                                 .monospacedDigit()
                                 .frame(width: 58, alignment: .trailing)

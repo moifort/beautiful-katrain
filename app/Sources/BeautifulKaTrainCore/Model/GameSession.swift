@@ -13,13 +13,18 @@ public final class GameSession {
         case failed(String)
     }
 
-    public struct Settings: Equatable, Sendable {
+    /// What the player chose last, carried across launches.
+    ///
+    /// These are preferences, not state: at startup they are sent to the bridge,
+    /// which then owns the truth. Each mode keeps its own setting, so switching from
+    /// the human model to a period style and back finds the rank where it was left.
+    public struct Settings: Equatable, Sendable, Codable {
         public var size: Int
         public var komi: Double
         public var rules: String
         public var humanColor: PlayerColor
         public var aiStrategy: String
-        public var aiSettingValue: Double
+        public var aiSettingValues: [String: Double]
 
         public init(
             size: Int = 19,
@@ -27,16 +32,23 @@ public final class GameSession {
             rules: String = "japanese",
             humanColor: PlayerColor = .black,
             aiStrategy: String = "ai:human",
-            aiSettingValue: Double = 8
+            aiSettingValues: [String: Double] = [:]
         ) {
             self.size = size
             self.komi = komi
             self.rules = rules
             self.humanColor = humanColor
             self.aiStrategy = aiStrategy
-            self.aiSettingValue = aiSettingValue
+            self.aiSettingValues = aiSettingValues
         }
 
+        public func value(for mode: AIMode) -> Double? {
+            aiSettingValues[mode.id]
+        }
+
+        public mutating func setValue(_ value: Double, for mode: AIMode) {
+            aiSettingValues[mode.id] = value
+        }
     }
 
     public private(set) var phase: Phase = .starting
@@ -65,6 +77,9 @@ public final class GameSession {
         if state?.aiStrategy == mode.id, let value = state?.aiSettings?[setting.key]?.doubleValue {
             return value
         }
+        if let remembered = settings.value(for: mode) {
+            return remembered
+        }
         if let value = bridgeSettings[mode.id]?[setting.key]?.doubleValue {
             return value
         }
@@ -77,8 +92,9 @@ public final class GameSession {
         var payload: [String: Double] = [:]
         if let setting = mode.setting, let value {
             payload[setting.key] = value
-            settings.aiSettingValue = value
+            settings.setValue(value, for: mode)
         }
+        store.save(settings)
         bridge.send(.setAI(id: nextID(), strategy: mode.id, settings: payload))
     }
 
@@ -88,11 +104,14 @@ public final class GameSession {
     public private(set) var scoreByMove: [Int: Double] = [:]
 
     private let bridge: BridgeProcess
+    private let store: SettingsStore
     private var nextCommandID = 1
     private var eventTask: Task<Void, Never>?
 
-    public init(bridge: BridgeProcess = BridgeProcess()) {
+    public init(bridge: BridgeProcess = BridgeProcess(), store: SettingsStore = SettingsStore()) {
         self.bridge = bridge
+        self.store = store
+        self.settings = store.load() ?? Settings()
     }
 
     // -- lifecycle -----------------------------------------------------------
@@ -185,6 +204,7 @@ public final class GameSession {
     }
 
     public func newGame() {
+        store.save(settings)
         scoreByMove.removeAll()
         state = nil
         lastErrorMessage = nil
@@ -204,8 +224,9 @@ public final class GameSession {
     /// The main setting of the chosen mode, if it has one. Everything else keeps the
     /// values from the shared KaTrain configuration.
     private var newGameSettings: [String: Double] {
-        guard let setting = AIMode.mode(for: settings.aiStrategy).setting else { return [:] }
-        return [setting.key: settings.aiSettingValue]
+        let mode = AIMode.mode(for: settings.aiStrategy)
+        guard let setting = mode.setting, let value = settingValue(for: mode) else { return [:] }
+        return [setting.key: value]
     }
 
     public func play(row: Int, col: Int) {
