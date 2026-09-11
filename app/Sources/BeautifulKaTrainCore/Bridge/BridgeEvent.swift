@@ -56,6 +56,10 @@ public struct ScoringDetail: Codable, Sendable {
     public let white: Double
     public let komi: Double
     public let territory: [String: Int]
+    /// Stones captured, by capturing player. Absent under area scoring.
+    public let prisoners: [String: Int]?
+    /// Living stones on the board, by colour. Only under area scoring.
+    public let stones: [String: Int]?
     public let result: String
     public let points: [TerritoryPoint]
     public let deadStones: [Point]
@@ -64,7 +68,26 @@ public struct ScoringDetail: Codable, Sendable {
         territory[color.rawValue] ?? 0
     }
 
+    public func prisoners(for color: PlayerColor) -> Int? {
+        prisoners?[color.rawValue]
+    }
+
+    public func stones(for color: PlayerColor) -> Int? {
+        stones?[color.rawValue]
+    }
+
+    public func total(for color: PlayerColor) -> Double {
+        color == .black ? black : white
+    }
+
     public var deadPoints: Set<Point> { Set(deadStones) }
+
+    /// The winner and by how much, or nil for a draw.
+    public var outcome: (winner: PlayerColor, margin: Double)? {
+        let margin = abs(black - white)
+        guard margin > 0 else { return nil }
+        return (black > white ? .black : .white, margin)
+    }
 }
 
 /// The whole board state, as the bridge sees it. The app never derives it.

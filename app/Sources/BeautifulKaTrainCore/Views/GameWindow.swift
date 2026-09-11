@@ -12,7 +12,7 @@ public struct GameWindow: View {
     public var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView(session: session)
-                .navigationSplitViewColumnWidth(194)
+                .navigationSplitViewColumnWidth(206)
         } detail: {
             board
         }

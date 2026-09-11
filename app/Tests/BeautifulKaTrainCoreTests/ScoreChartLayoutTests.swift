@@ -1,3 +1,4 @@
+import CoreGraphics
 import Testing
 
 @testable import BeautifulKaTrainCore
@@ -66,5 +67,46 @@ struct ScoreChartLayoutTests {
     @Test("Un plateau vide sans coup joué donne une seule barre")
     func firstMove() {
         #expect(ScoreChartLayout.bars(scores: [:], upTo: 0, width: width).count == 1)
+    }
+}
+
+@Suite("Annotation de la dernière barre")
+struct ScoreChartAnnotationTests {
+    @Test("Le chiffre est signé, avec une virgule")
+    func label() {
+        #expect(ScoreChart.label(for: 2.4) == "+2,4")
+        #expect(ScoreChart.label(for: -0.3) == "\u{2212}0,3")
+    }
+
+    @Test("Une partie serrée affiche zéro sans signe")
+    func closeGame() {
+        #expect(ScoreChart.label(for: 0) == "0")
+        #expect(ScoreChart.label(for: 0.02) == "0")
+        #expect(ScoreChart.label(for: -0.04) == "0")
+    }
+
+    @Test("Le chiffre monte avec une avance et descend avec un retard")
+    func offsetFollowsTheBar() {
+        let half: CGFloat = 18
+        let total: CGFloat = 36
+        let ahead = ScoreChart.labelOffset(value: 5, scale: 5, half: half, total: total)
+        let behind = ScoreChart.labelOffset(value: -5, scale: 5, half: half, total: total)
+        #expect(ahead < behind)
+    }
+
+    @Test("Le chiffre reste dans le graphe aux extrêmes")
+    func offsetStaysInside() {
+        let total: CGFloat = 36
+        for value in [-99.0, -5, 0, 5, 99] {
+            let offset = ScoreChart.labelOffset(value: value, scale: 5, half: 18, total: total)
+            #expect(offset >= 0)
+            #expect(offset <= total - 14)
+        }
+    }
+
+    @Test("Une partie nulle place le chiffre près du milieu")
+    func evenGameSitsNearTheMiddle() {
+        let offset = ScoreChart.labelOffset(value: 0, scale: 5, half: 18, total: 36)
+        #expect(abs(offset - 11) < 6)
     }
 }

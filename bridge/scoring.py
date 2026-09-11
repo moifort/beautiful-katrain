@@ -134,8 +134,14 @@ def score(
         # ones just agreed to be dead.
         black = territory_count["B"] + captures.get("by_black", 0) + dead_count["W"]
         white = territory_count["W"] + captures.get("by_white", 0) + dead_count["B"] + komi
-        detail = {"prisoners": {"by_black": captures.get("by_black", 0) + dead_count["W"],
-                                "by_white": captures.get("by_white", 0) + dead_count["B"]}}
+        # Keyed by capturing player, like `territory`, so the payload speaks one
+        # language throughout.
+        detail = {
+            "prisoners": {
+                "B": captures.get("by_black", 0) + dead_count["W"],
+                "W": captures.get("by_white", 0) + dead_count["B"],
+            }
+        }
 
     difference = black - white
     if difference > 0:

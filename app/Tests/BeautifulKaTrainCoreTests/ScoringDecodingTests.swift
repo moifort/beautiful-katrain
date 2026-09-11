@@ -101,3 +101,79 @@ struct ScoringDecodingTests {
         #expect(resume.contains("\"cmd\":\"resume_game\""))
     }
 }
+
+@Suite("Mise en forme du tableau des joueurs")
+struct ScoringFormatTests {
+    @Test("Les décimales sont françaises")
+    func frenchDecimals() {
+        #expect(PlayerTable.format(27.5) == "27,5")
+        #expect(PlayerTable.format(6.5) == "6,5")
+    }
+
+    @Test("Les entiers n'ont pas de décimale inutile")
+    func wholeNumbers() {
+        #expect(PlayerTable.format(18) == "18")
+        #expect(PlayerTable.format(0) == "0")
+    }
+
+    @Test("Les scores sont arrondis au demi-point")
+    func halfPoints() {
+        #expect(PlayerTable.format(27.26) == "27,5")
+        #expect(PlayerTable.format(27.1) == "27")
+    }
+
+    private func detail(black: Double, white: Double) -> ScoringDetail {
+        ScoringDetail(
+            black: black, white: white, komi: 6.5,
+            territory: ["B": 8, "W": 0], prisoners: ["B": 1, "W": 0], stones: nil,
+            result: "", points: [], deadStones: []
+        )
+    }
+
+    @Test("Le vainqueur et l'écart se déduisent des totaux")
+    func outcome() {
+        let black = detail(black: 45.5, white: 18)
+        #expect(black.outcome?.winner == .black)
+        #expect(black.outcome?.margin == 27.5)
+
+        let white = detail(black: 18, white: 45.5)
+        #expect(white.outcome?.winner == .white)
+        #expect(white.outcome?.margin == 27.5)
+    }
+
+    @Test("Une partie nulle n'a pas de vainqueur")
+    func draw() {
+        #expect(detail(black: 30, white: 30).outcome == nil)
+    }
+
+    @Test("Les composantes absentes sont lisibles comme telles")
+    func missingComponents() {
+        let counted = detail(black: 1, white: 2)
+        #expect(counted.stones(for: .black) == nil)
+        #expect(counted.prisoners(for: .black) == 1)
+        #expect(counted.total(for: .white) == 2)
+    }
+}
+
+@Suite("Lignes du tableau")
+struct PlayerTableRowTests {
+    @Test("Une ligne d'entiers se convertit sans perte")
+    func integerRow() {
+        let row = PlayerTable.Row("Prisonniers", black: 3, white: 16)
+        #expect(row.black == 3)
+        #expect(row.white == 16)
+        #expect(!row.isTotal)
+    }
+
+    @Test("Une composante qui ne s'applique pas reste vide")
+    func absentComponent() {
+        let row = PlayerTable.Row("Komi", black: nil, white: 6.5)
+        #expect(row.black == nil)
+        #expect(row.white == 6.5)
+    }
+
+    @Test("Le libellé identifie la ligne")
+    func identity() {
+        #expect(PlayerTable.Row("Territoire", black: 1, white: 2).id == "Territoire")
+    }
+}

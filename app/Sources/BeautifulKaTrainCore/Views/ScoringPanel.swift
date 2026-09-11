@@ -1,106 +1,100 @@
 import SwiftUI
 
-/// The count, shown while the two players agree on the dead stones.
+/// The count, shown once both players have passed.
 ///
-/// Every figure here comes from the bridge, recomputed after each change. The panel
-/// adds nothing up on its own.
+/// Laid out as a table because the reader needs to check that the totals add up, and
+/// a row per component is the only way to make that possible at a glance. Every
+/// number comes from the bridge, recomputed after each change — the panel adds
+/// nothing up on its own.
 public struct ScoringPanel: View {
     public let detail: ScoringDetail
-    public let onResume: () -> Void
-    public let onAccept: () -> Void
+    public let onNewGame: () -> Void
 
-    public init(
-        detail: ScoringDetail,
-        onResume: @escaping () -> Void,
-        onAccept: @escaping () -> Void
-    ) {
+    public init(detail: ScoringDetail, onNewGame: @escaping () -> Void) {
         self.detail = detail
-        self.onResume = onResume
-        self.onAccept = onAccept
+        self.onNewGame = onNewGame
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            PlayerTable(rows: rows)
+            outcome
+            Spacer(minLength: 0)
+            Button("Nouvelle partie", action: onNewGame)
+                .buttonStyle(.glassProminent)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text("Comptage")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.primaryText)
-
-            Text("Cliquez sur un groupe pour le déclarer mort ou vivant.")
+            Text("Cliquez un groupe pour le marquer mort ou vivant.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
-            Rectangle().fill(Theme.hairline).frame(height: 0.5)
+    private var rows: [PlayerTable.Row] {
+        var rows: [PlayerTable.Row] = [
+            PlayerTable.Row(
+                "Territoire",
+                black: detail.territory(for: .black),
+                white: detail.territory(for: .white)
+            )
+        ]
+        if detail.prisoners != nil {
+            rows.append(
+                PlayerTable.Row(
+                    "Captures",
+                    black: detail.prisoners(for: .black),
+                    white: detail.prisoners(for: .white)
+                )
+            )
+        }
+        if detail.stones != nil {
+            rows.append(
+                PlayerTable.Row("Pierres", black: detail.stones(for: .black), white: detail.stones(for: .white))
+            )
+        }
+        rows.append(PlayerTable.Row("Komi", black: nil, white: detail.komi))
+        rows.append(
+            PlayerTable.Row(
+                "Total",
+                black: detail.total(for: .black),
+                white: detail.total(for: .white),
+                isTotal: true
+            )
+        )
+        return rows
+    }
 
-            VStack(spacing: 6) {
-                row(color: .black, total: detail.black)
-                row(color: .white, total: detail.white)
-            }
-
-            Rectangle().fill(Theme.hairline).frame(height: 0.5)
-
-            HStack {
-                Text(outcome)
-                    .font(.system(size: 15))
+    private var outcome: some View {
+        Group {
+            if let outcome = detail.outcome {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Theme.stone(outcome.winner))
+                        .frame(width: 11, height: 11)
+                    // Short form: the stone already says who won, the figure says
+                    // by how much. A sentence would wrap in this width.
+                    Text("\(Theme.name(outcome.winner)) +\(PlayerTable.format(outcome.margin))")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.primaryText)
+                        .lineLimit(1)
+                        .monospacedDigit()
+                }
+            } else {
+                Text("Partie nulle")
+                    .font(.system(size: 13))
                     .foregroundStyle(Theme.primaryText)
-                Spacer(minLength: 0)
+                    .lineLimit(1)
             }
-
-            Spacer(minLength: 0)
-
-            VStack(spacing: 7) {
-                Button("Reprendre la partie", action: onResume)
-                    .buttonStyle(.glass)
-                Button("Accepter le score", action: onAccept)
-                    .buttonStyle(.glassProminent)
-            }
-            .controlSize(.large)
-            .frame(maxWidth: .infinity)
         }
-    }
-
-    private func row(color: PlayerColor, total: Double) -> some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(Theme.stone(color))
-                .frame(width: 11, height: 11)
-            Text(Theme.name(color))
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.primaryText.opacity(0.85))
-            Spacer(minLength: 0)
-            Text(breakdown(for: color))
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.secondaryText)
-                .monospacedDigit()
-            Text(format(total))
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.primaryText)
-                .monospacedDigit()
-        }
-    }
-
-    /// Where each side's points come from, so the total can be checked at a glance.
-    private func breakdown(for color: PlayerColor) -> String {
-        let territory = detail.territory(for: color)
-        if color == .white, detail.komi != 0 {
-            return "\(territory) + komi \(format(detail.komi))"
-        }
-        return "\(territory) de territoire"
-    }
-
-    private var outcome: String {
-        switch detail.result {
-        case "Draw": "Partie nulle"
-        default:
-            detail.result.hasPrefix("B+")
-                ? "Noir gagne de \(detail.result.dropFirst(2))"
-                : "Blanc gagne de \(detail.result.dropFirst(2))"
-        }
-    }
-
-    private func format(_ value: Double) -> String {
-        let rounded = (value * 2).rounded() / 2
-        let text = rounded == rounded.rounded() ? String(Int(rounded)) : String(format: "%.1f", rounded)
-        return text.replacingOccurrences(of: ".", with: ",")
     }
 }

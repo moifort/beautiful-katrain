@@ -90,11 +90,15 @@ def game_state(
         "result": result,
     }
     if scoring is not None:
+        # Every component of the total travels with it, so the panel can show a sum
+        # that adds up instead of a bare figure.
         payload["scoring"] = {
             "black": scoring["black"],
             "white": scoring["white"],
             "komi": scoring["komi"],
             "territory": scoring["territory"],
+            "prisoners": scoring.get("prisoners"),
+            "stones": scoring.get("stones"),
             "result": scoring["result"],
             "points": scoring["points"],
             "dead_stones": [{"row": r, "col": c} for r, c in sorted(dead or [])],

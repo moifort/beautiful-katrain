@@ -66,17 +66,19 @@ public struct BoardView: View {
         geometry: BoardGeometry,
         scoring: ScoringDetail
     ) {
-        let side = geometry.stoneRadius * 0.62
+        let side = geometry.stoneRadius * 0.44
         for owned in scoring.points {
             let center = geometry.position(row: owned.row, col: owned.col)
             let rect = CGRect(
                 x: center.x - side / 2, y: center.y - side / 2,
                 width: side, height: side
             )
-            context.fill(
-                Path(roundedRect: rect, cornerRadius: side * 0.22),
-                with: .color(Theme.stone(owned.color))
-            )
+            let path = Path(roundedRect: rect, cornerRadius: side * 0.3)
+            context.fill(path, with: .color(Theme.stone(owned.color)))
+            // White territory on light wood needs an edge to stay legible.
+            if owned.color == .white {
+                context.stroke(path, with: .color(Theme.gridLine.opacity(0.45)), lineWidth: 0.6)
+            }
         }
     }
 
@@ -119,11 +121,15 @@ public struct BoardView: View {
                 width: radius * 2, height: radius * 2
             )
             let colour = Theme.stone(stone.color)
-            let isDead = dead.contains(stone.point)
-            context.fill(
-                Path(ellipseIn: rect),
-                with: .color(isDead ? colour.opacity(Theme.deadStoneOpacity) : colour)
-            )
+            let path = Path(ellipseIn: rect)
+            guard dead.contains(stone.point) else {
+                context.fill(path, with: .color(colour))
+                continue
+            }
+            // A dead stone fades but keeps an outline: the player has to be able to
+            // tell whose stone they just agreed to give up.
+            context.fill(path, with: .color(colour.opacity(Theme.deadStoneOpacity)))
+            context.stroke(path, with: .color(colour.opacity(0.55)), lineWidth: max(0.7, radius * 0.07))
         }
     }
 

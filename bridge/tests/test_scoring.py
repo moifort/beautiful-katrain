@@ -137,6 +137,33 @@ class TestScore:
         )
         assert once["result"] == twice["result"]
 
+    def test_the_total_is_the_sum_of_its_parts(self):
+        """Whatever is displayed must add up, or the panel lies."""
+        stones, size = board(self.WITH_DEAD_WHITE)
+        result = scoring.score(
+            size, stones, dead=[(0, 0)], komi=6.5, captures={"by_black": 3, "by_white": 7}
+        )
+        assert result["black"] == result["territory"]["B"] + result["prisoners"]["B"]
+        assert result["white"] == result["territory"]["W"] + result["prisoners"]["W"] + result["komi"]
+
+    def test_prisoners_are_keyed_by_the_capturing_player(self):
+        stones, size = board(self.WITH_DEAD_WHITE)
+        result = scoring.score(
+            size, stones, dead=[(0, 0)], komi=0, captures={"by_black": 2, "by_white": 5}
+        )
+        # Two captured in play plus the white stone just agreed dead.
+        assert result["prisoners"]["B"] == 3
+        assert result["prisoners"]["W"] == 5
+
+    def test_chinese_totals_also_add_up(self):
+        stones, size = board(self.POSITION)
+        result = scoring.score(
+            size, stones, dead=[], komi=6.5, captures={"by_black": 9, "by_white": 0}, rules="chinese"
+        )
+        assert result["black"] == result["territory"]["B"] + result["stones"]["B"]
+        assert result["white"] == result["territory"]["W"] + result["stones"]["W"] + result["komi"]
+        assert "prisoners" not in result
+
     def test_territory_points_are_reported_for_display(self):
         stones, size = board(self.POSITION)
         result = scoring.score(size, stones, dead=[], komi=0, captures={"by_black": 0, "by_white": 0})

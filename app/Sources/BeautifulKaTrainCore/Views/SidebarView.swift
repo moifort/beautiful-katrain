@@ -10,17 +10,15 @@ public struct SidebarView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let state = session.state, let scoring = state.scoring {
-                ScoringPanel(
-                    detail: scoring,
-                    onResume: { session.resumeGame() },
-                    onAccept: { session.acceptScore() }
-                )
+                ScoringPanel(detail: scoring) {
+                    NotificationCenter.default.post(name: .beautifulKaTrainNewGameRequested, object: nil)
+                }
             } else if let state = session.state {
                 turnRow(state)
                 divider
                 scoreSection(state)
                 divider
-                capturesRow(state)
+                PlayerTable(rows: playingRows(state))
                 divider
                 opponentSection
                 Spacer(minLength: 0)
@@ -62,55 +60,27 @@ public struct SidebarView: View {
         return session.thinking.isVisible ? "réfléchit…" : ""
     }
 
+    /// The chart carries its own figure now, written at the tip of the last bar, so
+    /// there is no separate readout above it.
     private func scoreSection(_ state: GameState) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            leadReadout(state)
-            ScoreChart(scores: session.scoresFromPlayerSide, moveNumber: state.moveNumber)
-        }
+        ScoreChart(
+            scores: session.scoresFromPlayerSide,
+            moveNumber: state.moveNumber,
+            annotation: session.currentLead
+        )
     }
 
-    /// The figure and its arrow, read from the player's side: up and white when they
-    /// are ahead, down and red when they are behind.
-    private func leadReadout(_ state: GameState) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Spacer(minLength: 0)
-            if let lead = session.currentLead, abs(lead) >= 0.05 {
-                Image(systemName: lead > 0 ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(lead > 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
-                Text(formatted(abs(lead)))
-                    .font(.system(size: 15))
-                    .foregroundStyle(lead > 0 ? Theme.chartAheadCurrent : Theme.chartBehindCurrent)
-                    .contentTransition(.numericText())
-                    .monospacedDigit()
-            } else if session.currentLead != nil {
-                Text("0,0")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.primaryText)
-                    .monospacedDigit()
-            } else {
-                Text("—")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.secondaryText)
-            }
-        }
-    }
-
-    private func formatted(_ value: Double) -> String {
-        String(format: "%.1f", value).replacingOccurrences(of: ".", with: ",")
-    }
-
-    private func capturesRow(_ state: GameState) -> some View {
-        HStack {
-            Text("Prisonniers")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.primaryText.opacity(0.85))
-            Spacer(minLength: 0)
-            Text("\(state.captures.byBlack) — \(state.captures.byWhite)")
-                .font(.system(size: 13))
-                .foregroundStyle(Theme.secondaryText)
-                .monospacedDigit()
-        }
+    /// What is already known per player while the game is on. Territory only exists
+    /// once the dead stones are agreed, so it appears at the count, not before.
+    private func playingRows(_ state: GameState) -> [PlayerTable.Row] {
+        [
+            PlayerTable.Row(
+                "Captures",
+                black: state.captures.byBlack,
+                white: state.captures.byWhite
+            ),
+            PlayerTable.Row("Komi", black: nil, white: session.settings.komi),
+        ]
     }
 
     private var opponentSection: some View {

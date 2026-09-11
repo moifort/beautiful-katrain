@@ -46,6 +46,16 @@ public struct GameCommands: Commands {
 
             Button("Abandonner") { session?.resign() }
                 .disabled(session?.state?.status != .playing)
+
+            Divider()
+
+            // Available only while counting; the sidebar keeps a single action there,
+            // so these two live in the menu.
+            Button("Reprendre la partie") { session?.resumeGame() }
+                .disabled(session?.state?.status != .scoring)
+
+            Button("Accepter le score") { session?.acceptScore() }
+                .disabled(session?.state?.status != .scoring)
         }
     }
 }
