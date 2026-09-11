@@ -33,6 +33,11 @@ public struct BridgeCommand: Encodable, Sendable {
         BridgeCommand(id: id, cmd: "play", row: row, col: col)
     }
 
+    /// Switches the AI mode in the middle of a game.
+    public static func setAI(id: Int, strategy: String, settings: [String: Double]) -> BridgeCommand {
+        BridgeCommand(id: id, cmd: "set_ai", aiStrategy: strategy, aiSettings: settings)
+    }
+
     public static func toggleDead(id: Int, row: Int, col: Int) -> BridgeCommand {
         BridgeCommand(id: id, cmd: "toggle_dead", row: row, col: col)
     }

@@ -74,6 +74,8 @@ def game_state(
     result: Optional[str] = None,
     scoring: Optional[Dict[str, Any]] = None,
     dead: Optional[List[tuple]] = None,
+    ai_strategy: Optional[str] = None,
+    ai_settings: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     node = game.current_node
     payload = {
@@ -88,6 +90,8 @@ def game_state(
         "human_color": human_color,
         "status": status,
         "result": result,
+        "ai_strategy": ai_strategy,
+        "ai_settings": ai_settings,
     }
     if scoring is not None:
         # Every component of the total travels with it, so the panel can show a sum

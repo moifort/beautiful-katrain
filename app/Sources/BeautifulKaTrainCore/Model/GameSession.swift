@@ -19,7 +19,7 @@ public final class GameSession {
         public var rules: String
         public var humanColor: PlayerColor
         public var aiStrategy: String
-        public var humanRankKyu: Int
+        public var aiSettingValue: Double
 
         public init(
             size: Int = 19,
@@ -27,31 +27,16 @@ public final class GameSession {
             rules: String = "japanese",
             humanColor: PlayerColor = .black,
             aiStrategy: String = "ai:human",
-            humanRankKyu: Int = 8
+            aiSettingValue: Double = 8
         ) {
             self.size = size
             self.komi = komi
             self.rules = rules
             self.humanColor = humanColor
             self.aiStrategy = aiStrategy
-            self.humanRankKyu = humanRankKyu
+            self.aiSettingValue = aiSettingValue
         }
 
-        /// What to call the opponent on screen. The model filename is accurate but
-        /// unreadable, so it stays in the log.
-        public var opponentName: String {
-            switch aiStrategy {
-            case "ai:human": "KataGo humanlike"
-            case "ai:default": "KataGo"
-            case "ai:handicap": "KataGo handicap"
-            case "ai:policy": "KataGo policy"
-            case "ai:scoreloss": "KataGo score loss"
-            default: aiStrategy.replacingOccurrences(of: "ai:", with: "KataGo ")
-            }
-        }
-
-        /// Only the human-like model is rated in kyu.
-        public var showsRank: Bool { aiStrategy == "ai:human" }
     }
 
     public private(set) var phase: Phase = .starting
@@ -59,6 +44,43 @@ public final class GameSession {
     public private(set) var engineDescription: String?
     public private(set) var lastErrorMessage: String?
     public var settings = Settings()
+
+    /// AI modes this installation offers, in KaTrain's own recommended order.
+    public private(set) var availableStrategies: [String] = []
+    /// Current settings per mode, as the bridge reports them at startup.
+    public private(set) var bridgeSettings: [String: [String: SettingValue]] = [:]
+
+    public var modes: [AIMode] { availableStrategies.map(AIMode.mode(for:)) }
+
+    /// The mode actually in force, taken from the last state rather than from our
+    /// own settings, so the interface reflects the bridge and not the reverse.
+    public var currentMode: AIMode {
+        AIMode.mode(for: state?.aiStrategy ?? settings.aiStrategy)
+    }
+
+    /// Value of a mode's main setting: what the bridge last reported, else the
+    /// startup value, else the middle of the control's range.
+    public func settingValue(for mode: AIMode) -> Double? {
+        guard let setting = mode.setting else { return nil }
+        if state?.aiStrategy == mode.id, let value = state?.aiSettings?[setting.key]?.doubleValue {
+            return value
+        }
+        if let value = bridgeSettings[mode.id]?[setting.key]?.doubleValue {
+            return value
+        }
+        return (setting.range.lowerBound + setting.range.upperBound) / 2
+    }
+
+    /// Switches the opponent mid-game; it applies from its next move.
+    public func setAI(mode: AIMode, value: Double?) {
+        settings.aiStrategy = mode.id
+        var payload: [String: Double] = [:]
+        if let setting = mode.setting, let value {
+            payload[setting.key] = value
+            settings.aiSettingValue = value
+        }
+        bridge.send(.setAI(id: nextID(), strategy: mode.id, settings: payload))
+    }
 
     public let thinking = ThinkingIndicator()
 
@@ -115,9 +137,11 @@ public final class GameSession {
 
     private func handle(_ event: BridgeEvent) {
         switch event {
-        case .ready(let katago, let model):
+        case .ready(let katago, let model, let strategies, let settings):
             phase = .running
             engineDescription = model.map { URL(fileURLWithPath: $0).lastPathComponent } ?? katago
+            availableStrategies = strategies
+            bridgeSettings = settings
             newGame()
 
         case .state(_, let newState):
@@ -172,9 +196,16 @@ public final class GameSession {
                 rules: settings.rules,
                 humanColor: settings.humanColor,
                 aiStrategy: settings.aiStrategy,
-                aiSettings: ["human_kyu_rank": Double(settings.humanRankKyu)]
+                aiSettings: newGameSettings
             )
         )
+    }
+
+    /// The main setting of the chosen mode, if it has one. Everything else keeps the
+    /// values from the shared KaTrain configuration.
+    private var newGameSettings: [String: Double] {
+        guard let setting = AIMode.mode(for: settings.aiStrategy).setting else { return [:] }
+        return [setting.key: settings.aiSettingValue]
     }
 
     public func play(row: Int, col: Int) {

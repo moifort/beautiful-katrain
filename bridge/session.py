@@ -18,7 +18,13 @@ os.environ.setdefault("KIVY_NO_CONSOLELOG", "1")
 
 from katrain.core.ai import generate_ai_move
 from katrain.core.base_katrain import KaTrainBase
-from katrain.core.constants import OUTPUT_ERROR, PLAYER_AI, PLAYER_HUMAN, PLAYING_NORMAL
+from katrain.core.constants import (
+    AI_STRATEGIES_RECOMMENDED_ORDER,
+    OUTPUT_ERROR,
+    PLAYER_AI,
+    PLAYER_HUMAN,
+    PLAYING_NORMAL,
+)
 from katrain.core.engine import KataGoEngine
 from katrain.core.game import Game, IllegalMoveException
 from pysgf import Move
@@ -226,6 +232,8 @@ class BridgeSession(KaTrainBase):
                 result=result,
                 scoring=counted,
                 dead=sorted(self._dead),
+                ai_strategy=self._ai_strategy,
+                ai_settings=self.config(f"ai/{self._ai_strategy}"),
             ),
         )
 
@@ -306,9 +314,8 @@ class BridgeSession(KaTrainBase):
         if self._engine is None:
             raise CommandError("no_engine", "engine not started")
         self._human_color = human_color
-        ai_color = "W" if human_color == "B" else "B"
         self.players_info[human_color].update(PLAYER_HUMAN, PLAYING_NORMAL)
-        self.players_info[ai_color].update(PLAYER_AI, ai_strategy)
+        self.players_info[self._ai_color].update(PLAYER_AI, ai_strategy)
         if ai_settings:
             self.config(f"ai/{ai_strategy}").update(ai_settings)
         self._emitted_scores.clear()
@@ -382,6 +389,37 @@ class BridgeSession(KaTrainBase):
 
     def state(self, command_id):
         self._require_game()
+        self._emit_state(command_id)
+
+    @property
+    def _ai_color(self) -> str:
+        return "W" if self._human_color == "B" else "B"
+
+    @property
+    def _ai_strategy(self) -> str:
+        return self.players_info[self._ai_color].strategy
+
+    def available_strategies(self) -> Dict[str, Any]:
+        """The AI modes this installation actually has settings for.
+
+        Taken from KaTrain's own recommended order rather than a list of our own, so
+        a mode added upstream shows up without a change here.
+        """
+        strategies = [s for s in AI_STRATEGIES_RECOMMENDED_ORDER if self.config(f"ai/{s}") is not None]
+        return {
+            "strategies": strategies,
+            "ai_settings": {s: self.config(f"ai/{s}") for s in strategies},
+        }
+
+    def set_ai(self, command_id, strategy, settings):
+        """Switches the AI mode mid-game; it applies from its next move."""
+        self._require_game()
+        current = self.config(f"ai/{strategy}")
+        if current is None:
+            raise CommandError("unknown_ai", f"AI strategy {strategy} not found")
+        if settings:
+            current.update(settings)
+        self.players_info[self._ai_color].update(PLAYER_AI, strategy)
         self._emit_state(command_id)
 
     def _require_game(self) -> None:

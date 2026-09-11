@@ -35,6 +35,45 @@ public struct Captures: Codable, Sendable, Hashable {
     }
 }
 
+/// One value from KaTrain's AI settings, which mix numbers, flags and text.
+///
+/// Decoding them into a single concrete type would fail on the first boolean, so
+/// each value keeps its own shape and callers ask for what they need.
+public enum SettingValue: Codable, Sendable, Hashable {
+    case number(Double)
+    case flag(Bool)
+    case text(String)
+    case unsupported
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(Bool.self) {
+            self = .flag(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .text(value)
+        } else {
+            self = .unsupported
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .number(let value): try container.encode(value)
+        case .flag(let value): try container.encode(value)
+        case .text(let value): try container.encode(value)
+        case .unsupported: try container.encodeNil()
+        }
+    }
+
+    public var doubleValue: Double? {
+        if case .number(let value) = self { return value }
+        return nil
+    }
+}
+
 public enum GameStatus: String, Codable, Sendable {
     case playing
     /// Both players have passed; the dead stones are being agreed on.
@@ -104,6 +143,9 @@ public struct GameState: Codable, Sendable {
     public let status: GameStatus
     public let result: String?
     public let scoring: ScoringDetail?
+    /// The AI mode currently in force, as the bridge sees it.
+    public let aiStrategy: String?
+    public let aiSettings: [String: SettingValue]?
 
     public var isHumanTurn: Bool { status == .playing && toPlay == humanColor }
 
@@ -112,7 +154,7 @@ public struct GameState: Codable, Sendable {
 }
 
 public enum BridgeEvent: Sendable {
-    case ready(katago: String?, model: String?)
+    case ready(katago: String?, model: String?, strategies: [String], settings: [String: [String: SettingValue]])
     case state(id: Int?, GameState)
     case thinking(Bool)
     case score(moveNumber: Int, scoreLead: Double)
@@ -127,6 +169,7 @@ public enum BridgeEvent: Sendable {
 extension BridgeEvent: Decodable {
     private enum Keys: String, CodingKey {
         case event, id, katago, model, value, moveNumber, scoreLead, code, message
+        case strategies, aiSettings
     }
 
     public init(from decoder: any Decoder) throws {
@@ -138,7 +181,11 @@ extension BridgeEvent: Decodable {
         case "ready":
             self = .ready(
                 katago: try container.decodeIfPresent(String.self, forKey: .katago),
-                model: try container.decodeIfPresent(String.self, forKey: .model)
+                model: try container.decodeIfPresent(String.self, forKey: .model),
+                strategies: try container.decodeIfPresent([String].self, forKey: .strategies) ?? [],
+                settings: try container.decodeIfPresent(
+                    [String: [String: SettingValue]].self, forKey: .aiSettings
+                ) ?? [:]
             )
         case "state":
             self = .state(id: id, try GameState(from: decoder))

@@ -90,18 +90,30 @@ public struct SidebarView: View {
         ]
     }
 
+    /// The opponent, and the way to change it: the line that shows the mode is the
+    /// line that switches it. Its setting belongs to the new-game sheet, not here —
+    /// the sidebar states who you are playing, it is not a control panel.
     private var opponentSection: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(session.settings.opponentName)
+        Menu {
+            ForEach(session.modes) { mode in
+                Button {
+                    session.setAI(mode: mode, value: session.settingValue(for: mode))
+                } label: {
+                    Text(mode.name)
+                    if mode.id == session.currentMode.id { Image(systemName: "checkmark") }
+                }
+            }
+        } label: {
+            Text(session.currentMode.name)
                 .font(.system(size: 13))
                 .foregroundStyle(Theme.primaryText.opacity(0.85))
                 .lineLimit(1)
-            if session.settings.showsRank {
-                Text("niveau \(session.settings.humanRankKyu) kyu")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.secondaryText)
-            }
         }
+        // The borderless style draws its own indicator; adding one put a second
+        // chevron ahead of the label.
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(session.currentMode.summary)
     }
 
     private func actions(_ state: GameState) -> some View {

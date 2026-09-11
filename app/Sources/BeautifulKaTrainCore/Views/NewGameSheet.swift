@@ -10,6 +10,8 @@ public struct NewGameSheet: View {
         _draft = State(initialValue: session.settings)
     }
 
+    private var mode: AIMode { AIMode.mode(for: draft.aiStrategy) }
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Nouvelle partie")
@@ -29,20 +31,37 @@ public struct NewGameSheet: View {
                 }
                 .pickerStyle(.segmented)
 
-                LabeledContent("Niveau de l'IA") {
-                    HStack {
-                        Slider(
-                            value: Binding(
-                                get: { Double(draft.humanRankKyu) },
-                                set: { draft.humanRankKyu = Int($0.rounded()) }
-                            ),
-                            in: 1...20,
-                            step: 1
-                        )
-                        Text("\(draft.humanRankKyu) kyu")
-                            .font(.system(size: 12))
-                            .monospacedDigit()
-                            .frame(width: 54, alignment: .trailing)
+                Picker("Adversaire", selection: $draft.aiStrategy) {
+                    ForEach(session.modes) { mode in
+                        Text(mode.name).tag(mode.id)
+                    }
+                }
+                .onChange(of: draft.aiStrategy) { _, _ in
+                    // Each mode has its own setting; start from the value the bridge
+                    // already holds for it rather than carrying the previous one over.
+                    draft.aiSettingValue = session.settingValue(for: mode) ?? draft.aiSettingValue
+                }
+
+                if !mode.summary.isEmpty {
+                    Text(mode.summary)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let setting = mode.setting {
+                    LabeledContent(setting.label) {
+                        HStack {
+                            Slider(
+                                value: $draft.aiSettingValue,
+                                in: setting.range,
+                                step: setting.step
+                            )
+                            Text(setting.describe(draft.aiSettingValue))
+                                .font(.system(size: 12))
+                                .monospacedDigit()
+                                .frame(width: 58, alignment: .trailing)
+                        }
                     }
                 }
             }
@@ -62,6 +81,6 @@ public struct NewGameSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 380)
+        .frame(width: 400)
     }
 }

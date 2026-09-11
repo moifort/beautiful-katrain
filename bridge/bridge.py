@@ -37,6 +37,10 @@ def _dispatch(session: BridgeSession, writer: EventWriter, command: Dict[str, An
         session.submit(session.undo, command_id)
     elif name == "resign":
         session.submit(session.resign, command_id)
+    elif name == "set_ai":
+        session.submit(
+            session.set_ai, command_id, command["ai_strategy"], command.get("ai_settings") or {}
+        )
     elif name == "toggle_dead":
         session.submit(session.toggle_dead, command_id, int(command["row"]), int(command["col"]))
     elif name == "accept_score":
@@ -61,7 +65,13 @@ def main() -> int:
         writer.emit("engine_failed", None, message=f"{type(exc).__name__}: {exc}")
         return 1
 
-    writer.emit("ready", None, katago=session.config("engine/katago"), model=session.config("engine/model"))
+    writer.emit(
+        "ready",
+        None,
+        katago=session.config("engine/katago"),
+        model=session.config("engine/model"),
+        **session.available_strategies(),
+    )
 
     for line in sys.stdin:
         line = line.strip()

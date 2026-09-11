@@ -161,3 +161,47 @@ class TestLeavingScoring:
         session.new_game(8, 9, 6.5, "japanese", "B", "ai:human", {})
         assert session._status == "playing"
         assert session._dead == set()
+
+
+class TestAIStrategies:
+    def test_the_catalogue_comes_from_katrain_not_from_us(self, session):
+        catalogue = session.available_strategies()
+        # KaTrain's own recommended order, filtered to what this install configures.
+        assert "ai:human" in catalogue["strategies"]
+        assert "ai:default" in catalogue["strategies"]
+        assert catalogue["strategies"][0] == "ai:default"
+        assert all(catalogue["ai_settings"][s] is not None for s in catalogue["strategies"])
+
+    def test_the_current_mode_travels_with_the_state(self, session):
+        state = last_state(session)
+        assert state["ai_strategy"] == "ai:human"
+        assert state["ai_settings"]["human_kyu_rank"] == 8
+
+    def test_switching_mode_takes_effect_at_once(self, session):
+        session.set_ai(4, "ai:pro", {"pro_year": 1950})
+        state = last_state(session)
+        assert state["ai_strategy"] == "ai:pro"
+        assert state["ai_settings"]["pro_year"] == 1950
+        assert session.players_info["W"].strategy == "ai:pro"
+
+    def test_the_human_side_is_never_turned_into_an_ai(self, session):
+        session.set_ai(4, "ai:default", {})
+        assert session.players_info["B"].human
+        assert session.players_info["W"].ai
+
+    def test_an_unknown_mode_is_refused(self, session):
+        with pytest.raises(CommandError) as exc:
+            session.set_ai(4, "ai:nonsense", {})
+        assert exc.value.code == "unknown_ai"
+
+    def test_settings_given_are_remembered(self, session):
+        session.set_ai(4, "ai:human", {"human_kyu_rank": -3})
+        assert session.config("ai/ai:human")["human_kyu_rank"] == -3
+        # Restore, since the config file is shared with KaTrain itself.
+        session.set_ai(5, "ai:human", {"human_kyu_rank": 8})
+
+    def test_playing_as_white_puts_the_ai_on_black(self, session):
+        session.new_game(9, 9, 6.5, "japanese", "W", "ai:human", {})
+        assert session._ai_color == "B"
+        assert session.players_info["B"].ai
+        assert session.players_info["W"].human
