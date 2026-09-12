@@ -28,9 +28,13 @@ public enum Theme {
         color == .black ? blackStone : whiteStone
     }
 
-    /// A stone agreed to be dead is not removed, it fades: the player must still be
-    /// able to see what they are agreeing to.
-    public static let deadStoneOpacity: Double = 0.20
+    /// A stone agreed to be dead is not removed, it dims — but only slightly. Faded
+    /// too far it settles onto the wood, and a black stone and a white one end up the
+    /// same beige disc; the player has to keep seeing whose stone they are giving up.
+    /// The territory mark at its centre is what says the point is being counted.
+    public static let deadStoneOpacity: Double = 0.65
+    /// A dimmed white stone on light wood needs a contour to keep its edge.
+    public static let deadStoneContour = gridLine.opacity(0.35)
 
     /// Marks the last move by contrast with the stone it sits on, rather than with a
     /// colour of its own.

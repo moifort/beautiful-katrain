@@ -126,10 +126,17 @@ public struct BoardView: View {
                 context.fill(path, with: .color(colour))
                 continue
             }
-            // A dead stone fades but keeps an outline: the player has to be able to
-            // tell whose stone they just agreed to give up.
+            // A dead stone is dimmed, not emptied: it has to stay recognisably black
+            // or white. What marks it as given up is the opponent's territory mark,
+            // drawn over it once the point is counted.
             context.fill(path, with: .color(colour.opacity(Theme.deadStoneOpacity)))
-            context.stroke(path, with: .color(colour.opacity(0.55)), lineWidth: max(0.7, radius * 0.07))
+            if stone.color == .white {
+                context.stroke(
+                    path,
+                    with: .color(Theme.deadStoneContour),
+                    lineWidth: max(0.6, radius * 0.05)
+                )
+            }
         }
     }
 
