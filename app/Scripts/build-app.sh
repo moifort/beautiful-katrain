@@ -78,6 +78,10 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.board-games</string>
+    <!-- L'application n'emploie aucun chiffrement au-delà de celui du système.
+         Sans cette clé, App Store Connect réclame des documents d'export à
+         chaque envoi de build. -->
+    <key>ITSAppUsesNonExemptEncryption</key><false/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <!-- macOS ne déclare aucun type pour un enregistrement de go : Moyo importe
