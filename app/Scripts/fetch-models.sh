@@ -26,7 +26,12 @@ fetch() {
     return
   fi
   echo "==> $name"
-  curl --fail --location --retry 3 --retry-delay 5 --progress-bar -o "$path.part" "$url"
+  # Une barre de progression devant un terminal, rien du tout dans un journal :
+  # cent lignes de dièses ne disent pas où en est un téléchargement relu après coup.
+  local noise="--progress-bar"
+  [ -t 2 ] || noise="--silent --show-error"
+  # shellcheck disable=SC2086
+  curl --fail --location --retry 3 --retry-delay 5 $noise -o "$path.part" "$url"
   local got
   got="$(shasum -a 256 "$path.part" | cut -d' ' -f1)"
   if [ "$got" != "$want" ]; then
