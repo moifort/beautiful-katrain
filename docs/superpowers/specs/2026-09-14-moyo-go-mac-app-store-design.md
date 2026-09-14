@@ -244,6 +244,37 @@ arrive avant qu'on ait construit quoi que ce soit par-dessus.
 Catégorie Jeux › Plateau. Classification 4+. Gratuit. Confidentialité : aucune donnée
 collectée. Description créditant KaTrain et KataGo, licences MIT reproduites.
 
+## 13. Déploiement automatique
+
+La CI de Vinarium (`../vinarium/.github/workflows/release-ios.yml`) sert de patron :
+clé API App Store Connect en secrets, certificat de distribution importé dans un
+trousseau temporaire propre à la session, profil de provisioning matérialisé depuis un
+secret, puis `xcrun altool --upload-app`. Déclenchement sur tag et `workflow_dispatch`,
+avec un `skip_upload` pour éprouver la chaîne sans consommer de numéro de build.
+
+Trois secrets sont déjà en place et valent pour le compte entier : `ASC_KEY_ID`,
+`ASC_ISSUER_ID`, `ASC_KEY_P8`.
+
+### Ce qui ne se transpose pas
+
+**Pas d'`xcodebuild archive`.** Moyo est un paquet SwiftPM, pas un projet Xcode : il n'y
+a ni `.xcarchive` ni `exportArchive`. La CI appelle nos scripts, signe de l'intérieur
+vers l'extérieur, puis emballe avec `productbuild --sign` en `.pkg`. L'envoi devient
+`xcrun altool --upload-app --type macos --file Moyo.pkg`.
+
+**Deux certificats au lieu d'un**, d'où de nouveaux secrets : *Apple Distribution* pour
+l'application et *Mac Installer Distribution* pour le `.pkg`, plus le profil de
+provisioning macOS.
+
+**Les 190 Mo de modèles ne peuvent pas vivre dans le dépôt.** La CI doit les récupérer
+au moment du build, depuis une source stable dont on maîtrise la disponibilité. C'est
+une contrainte de la machine de build, pas de l'application : celle-ci reste sans
+entitlement réseau et embarque les modèles.
+
+**KataGo doit être compilé**, avec Abseil, protobuf et libzip en statique — une dizaine
+de minutes. À mettre en cache sur la version de KataGo, sans quoi chaque release les
+repaye.
+
 ## 12. Hors périmètre
 
 SGF, mode analyse, mode teaching, nerd mode, réglages moteur, builds Intel ou
