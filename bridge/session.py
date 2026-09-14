@@ -1,166 +1,69 @@
-"""Headless KaTrain session driving a game against the AI.
+"""The game the bridge is holding: a game against the AI, or a record under review.
 
-Everything that touches the KaTrain core happens on a single worker thread. The
-core notifies progress by calling `update_state()` from KataGo's reader thread; if
-we generated the AI move right there, that thread would block waiting for the very
-analyses it is supposed to be reading. KaTrain solves this with a message loop, and
-so do we: `update_state()` only enqueues, the worker does the work.
+Two modes share one object because the KaTrain core insists on a single host
+carrying `.game` and `.players_info`. What they do not share is behaviour: playing
+answers to the engine and the clock, reviewing answers to the arrow keys. The mode
+is carried by `_status`, which the app reads as well.
+
+Everything process-shaped — the worker thread, the engine's lifetime, the inert
+controls — lives in `host.py`. Everything that is pure reading of a record lives in
+`review.py`. What remains here is the state and who is allowed to change it.
 """
 
-import os
-import queue
-import sys
-import threading
-from typing import Any, Dict, Optional
-
-os.environ.setdefault("KIVY_NO_ARGS", "1")
-os.environ.setdefault("KIVY_NO_CONSOLELOG", "1")
+from typing import Any, Dict, List, Optional
 
 from katrain.core.ai import generate_ai_move
-from enginepaths import bundle_engine_overrides
-from katrain.core.base_katrain import KaTrainBase
 from katrain.core.constants import (
     AI_STRATEGIES_RECOMMENDED_ORDER,
-    OUTPUT_ERROR,
     PLAYER_AI,
     PLAYER_HUMAN,
     PLAYING_NORMAL,
+    PRIORITY_DEFAULT,
 )
-from katrain.core.engine import KataGoEngine
 from katrain.core.game import Game, IllegalMoveException
 from pysgf import Move
 
+import review
 import scoring
 import serialize
-from protocol import CommandError, to_engine_coords
+from host import KaTrainHost
+from protocol import CommandError, to_display_coords, to_engine_coords
 
 
-class _Inert:
-    """Swallows any attribute access, call or assignment.
-
-    The core reaches into `katrain.controls` on the teaching and editing paths
-    without checking whether a UI is attached. Returning something inert keeps
-    those paths from raising in a headless process.
-    """
-
-    __slots__ = ()
-
-    def __call__(self, *args, **kwargs):
-        return None
-
-    def __getattr__(self, name):
-        return _INERT
-
-    def __setattr__(self, name, value):
-        pass
-
-    def __bool__(self):
-        return False
-
-
-_INERT = _Inert()
-
-
-class NullControls:
-    """Stands in for the Kivy controls object, logging what the core reaches for.
-
-    Each attribute name is reported once on stderr. An unexpected name showing up
-    means the core took a path we have not accounted for, which is worth knowing
-    even though nothing breaks.
-    """
-
-    def __init__(self, log):
-        object.__setattr__(self, "_log", log)
-        object.__setattr__(self, "_seen", set())
-
-    def __getattr__(self, name):
-        seen = object.__getattribute__(self, "_seen")
-        if name not in seen:
-            seen.add(name)
-            object.__getattribute__(self, "_log")(f"core reached for controls.{name}")
-        return _INERT
-
-    def __setattr__(self, name, value):
-        pass
-
-
-class BridgeSession(KaTrainBase):
+class BridgeSession(KaTrainHost):
     """Owns the game state and mediates every call into the KaTrain core."""
 
+    #: How many nodes before the current one jump the analysis queue.
+    #:
+    #: A record opens at its last move and is read backwards, so the positions about
+    #: to be asked for are the ones just behind. Everything else keeps the background
+    #: priority `Game` already gave it.
+    PRIORITY_WINDOW = 5
+
     def __init__(self, writer):
-        self._writer = writer
-        self._tasks: "queue.Queue" = queue.Queue()
-        self._engine: Optional[KataGoEngine] = None
         self._human_color = "B"
         self._emitted_scores: Dict[int, float] = {}
         self._ai_pending = False
-        self._stopping = False
-        self._status = "playing"  # playing | scoring | finished
+        self._status = "playing"  # playing | scoring | finished | review
         self._dead: set = set()
-        super().__init__()
-        self._apply_bundle_paths()
-        self.controls = NullControls(self._log_stderr)
-
-    def _apply_bundle_paths(self) -> None:
-        """Laisse le bundle imposer ses chemins moteur, s'il y en a un.
-
-        Dans l'application distribuée, le sandbox interdit ~/.katrain : binaire,
-        modèles et configuration vivent dans le bundle. Hors bundle, aucune
-        variable n'est posée et la configuration de l'utilisateur reste intacte.
-        """
-        overrides = bundle_engine_overrides(os.environ)
-        if overrides:
-            self._config.setdefault("engine", {}).update(overrides)
-
-    # -- logging -------------------------------------------------------------
-    # The base class prints to stdout, which is the protocol channel. Everything
-    # diagnostic goes to stderr instead.
-
-    def _log_stderr(self, message: str) -> None:
-        sys.stderr.write(f"{message}\n")
-        sys.stderr.flush()
-
-    def log(self, message, level=1):
-        if level == OUTPUT_ERROR or self.debug_level >= level:
-            self._log_stderr(str(message))
-
-    # -- worker loop ---------------------------------------------------------
-
-    def start(self) -> None:
-        self._worker = threading.Thread(target=self._run, daemon=True, name="bridge-worker")
-        self._worker.start()
-
-    def submit(self, fn, *args) -> None:
-        self._tasks.put((fn, args))
-
-    def _run(self) -> None:
-        while True:
-            fn, args = self._tasks.get()
-            if fn is None:
-                return
-            try:
-                fn(*args)
-            except CommandError as exc:
-                # Every command method takes its command id first, so the error can
-                # be attributed to the command that caused it.
-                self._writer.emit("error", args[0] if args else None, code=exc.code, message=exc.message)
-            except Exception as exc:  # keep the bridge alive; the app sees the error
-                self._writer.emit("error", None, code="internal", message=f"{type(exc).__name__}: {exc}")
-                self._log_stderr(f"worker error: {type(exc).__name__}: {exc}")
-
-    def stop(self) -> None:
-        self._stopping = True
-        self._tasks.put((None, ()))
-        if self._engine is not None:
-            try:
-                self._engine.shutdown(finish=False)
-            except Exception:
-                pass
-
-    # -- engine --------------------------------------------------------------
-
-    def start_engine(self) -> None:
-        self._engine = KataGoEngine(self, self.config("engine"))
+        # -- review state, all empty outside a review
+        #: The main line of the record, cached once. A variation adds nodes to the
+        #: tree, so recomputing it would make the record's own length move.
+        self._line: List[Any] = []
+        self._index = 0
+        #: One entry per variation move: (parent, node, we created it).
+        #: `Game.play` reuses a matching child, so KataGo's move landing on the move
+        #: actually played walks into the record itself — which must never be pruned.
+        self._variation: List[tuple] = []
+        self._anchor_pv: List[str] = []
+        self._game_info: Dict[str, Any] = {}
+        #: Nodes already pushed to the front of the queue, by id. `request_analysis`
+        #: has no guard against duplicates, and the tree holds every node for the
+        #: session's lifetime, so the ids cannot be reused under us.
+        self._boosted: set = set()
+        self._emitted_best: Optional[tuple] = None
+        self._emitted_progress: Optional[int] = None
+        super().__init__(writer)
 
     # -- state notification --------------------------------------------------
 
@@ -173,6 +76,9 @@ class BridgeSession(KaTrainBase):
         if self.game is None:
             return
         self._emit_new_scores()
+        if self._status == "review":
+            self._on_review_advanced()
+            return
         if self._status == "scoring" and not self._dead:
             # The ownership map often lands after the second pass; take it when it
             # arrives rather than leaving the player with nothing proposed.
@@ -183,13 +89,31 @@ class BridgeSession(KaTrainBase):
             return
         self._maybe_play_ai_move()
 
+    def _on_review_advanced(self) -> None:
+        """An analysis came back while reviewing: move the gauge, and the marker."""
+        self._emit_progress()
+        best = self._best_move()
+        key = None if best is None else (best["row"], best["col"])
+        if key != self._emitted_best:
+            self._emitted_best = key
+            self._emit_state()
+
     #: Score changes smaller than this are not worth an event. KataGo keeps refining
     #: an analysis while it ponders, and without a threshold every node would emit a
     #: stream of events differing in the third decimal.
     SCORE_EPSILON = 0.05
 
+    def _score_nodes(self) -> List[Any]:
+        """The nodes whose score belongs on the chart.
+
+        While playing, the line up to the current move — there is nothing beyond it.
+        While reviewing, the whole record, so stepping back does not blank out the
+        part of the chart that lies ahead. Variation nodes are in neither list.
+        """
+        return self._line if self._status == "review" else self.game.current_node.nodes_from_root
+
     def _emit_new_scores(self) -> None:
-        for node in self.game.current_node.nodes_from_root:
+        for node in self._score_nodes():
             if not node.analysis_complete:
                 continue
             score = node.score
@@ -200,6 +124,13 @@ class BridgeSession(KaTrainBase):
                 continue
             self._emitted_scores[node.depth] = score
             self._writer.emit("score", None, move_number=node.depth, score_lead=round(score, 2))
+
+    def _emit_progress(self) -> None:
+        done = sum(1 for node in self._line if node.analysis_complete)
+        if done == self._emitted_progress:
+            return
+        self._emitted_progress = done
+        self._writer.emit("analysis_progress", None, done=done, total=len(self._line))
 
     def _maybe_play_ai_move(self) -> None:
         """Reproduces the core's own trigger condition for an AI move.
@@ -231,6 +162,9 @@ class BridgeSession(KaTrainBase):
     # -- commands ------------------------------------------------------------
 
     def _emit_state(self, command_id: Optional[int] = None) -> None:
+        if self._status == "review":
+            self._emit_review_state(command_id)
+            return
         result = self.game.current_node.end_state if self._status == "finished" else None
         counted = self._count() if self._status in ("scoring", "finished") else None
         if counted is not None and result is None and self._status == "finished":
@@ -331,6 +265,7 @@ class BridgeSession(KaTrainBase):
         self.players_info[self._ai_color].update(PLAYER_AI, ai_strategy)
         if ai_settings:
             self.config(f"ai/{ai_strategy}").update(ai_settings)
+        self._clear_review()
         self._emitted_scores.clear()
         self._dead = set()
         self._status = "playing"
@@ -380,6 +315,7 @@ class BridgeSession(KaTrainBase):
     def undo(self, command_id):
         """Steps back until it is the human's turn again, two moves in the usual case."""
         self._require_game()
+        self._refuse_in_review()
         self._status = "playing"
         self._dead = set()
         self._ai_pending = False
@@ -395,6 +331,7 @@ class BridgeSession(KaTrainBase):
 
     def resign(self, command_id):
         self._require_game()
+        self._refuse_in_review()
         self._ai_pending = False
         self.game.current_node.end_state = f"{self.game.current_node.next_player}+R"
         self._writer.emit("thinking", None, value=False)
@@ -403,6 +340,163 @@ class BridgeSession(KaTrainBase):
     def state(self, command_id):
         self._require_game()
         self._emit_state(command_id)
+
+    # -- review --------------------------------------------------------------
+
+    def _clear_review(self) -> None:
+        self._line = []
+        self._index = 0
+        self._variation = []
+        self._anchor_pv = []
+        self._game_info = {}
+        self._boosted = set()
+        self._emitted_best = None
+        self._emitted_progress = None
+
+    def load_sgf(self, command_id, name, contents):
+        """Reads a record and opens it at its last move.
+
+        The text arrives from the app, already decoded. The bridge never opens a
+        file: the sandbox grants access to the window, not to the child process,
+        and `shims/chardet` is deliberately too modest to guess an encoding.
+        """
+        if self._engine is None:
+            raise CommandError("no_engine", "engine not started")
+        root = review.parse(contents)
+        self._clear_review()
+        self._emitted_scores.clear()
+        self._dead = set()
+        self._ai_pending = False
+        self._status = "review"
+        # Nobody is to move: a record is read, not played on.
+        for color in ("B", "W"):
+            self.players_info[color].update(PLAYER_HUMAN, PLAYING_NORMAL)
+        # Game re-reads the tree — handicap stones may be placed — so the main line
+        # is taken from the game's own root rather than from the parsed one.
+        self.game = Game(self, self._engine, move_tree=root, sgf_filename=name)
+        self._line = review.main_line(self.game.root)
+        self._game_info = review.game_info(self.game.root)
+        self._index = len(self._line) - 1
+        self.game.set_current_node(self._line[self._index])
+        self._boost_window()
+        self._emit_state(command_id)
+
+    def goto(self, command_id, move_number):
+        """Jumps to a position in the main line. Out-of-range asks are clamped."""
+        self._require_review()
+        self._prune_variation()
+        self._index = max(0, min(int(move_number), len(self._line) - 1))
+        self.game.set_current_node(self._line[self._index])
+        self._emitted_best = None
+        self._boost_window()
+        self._emit_state(command_id)
+
+    def step_variation(self, command_id, step):
+        """Walks KataGo's own continuation, one move per call, colours alternating."""
+        self._require_review()
+        if int(step) > 0:
+            self._push_variation(command_id)
+        else:
+            self._pop_variation(command_id)
+
+    def _push_variation(self, command_id) -> None:
+        if not self._variation:
+            self._anchor_pv = review.variation(self._line[self._index])
+        depth = len(self._variation)
+        if depth >= len(self._anchor_pv):
+            raise CommandError("no_variation", "KataGo ne propose pas de suite à cette position")
+        node = self.game.current_node
+        move = Move.from_gtp(self._anchor_pv[depth], player=node.next_player)
+        if move.is_pass:
+            raise CommandError("no_variation", "la variante proposée s'arrête sur une passe")
+        before = list(node.children)
+        try:
+            played = self.game.play(move)
+        except IllegalMoveException as exc:
+            raise CommandError("illegal_move", str(exc)) from exc
+        created = all(child is not played for child in before)
+        self._variation.append((node, played, created))
+        self._emit_state(command_id)
+
+    def _pop_variation(self, command_id) -> None:
+        if not self._variation:
+            raise CommandError("no_variation", "il n'y a pas de variante à remonter")
+        parent, node, created = self._variation.pop()
+        self.game.set_current_node(parent)
+        if created:
+            parent.children = [child for child in parent.children if child is not node]
+        if not self._variation:
+            self._anchor_pv = []
+        self._emit_state(command_id)
+
+    def _prune_variation(self) -> None:
+        """Drops the whole variation branch, keeping whatever belongs to the record."""
+        while self._variation:
+            parent, node, created = self._variation.pop()
+            if created:
+                parent.children = [child for child in parent.children if child is not node]
+        self._anchor_pv = []
+
+    def _boost_window(self) -> None:
+        """Pushes the current node and the ones just behind it to the front of the queue."""
+        if self._engine is None:
+            return
+        lower = max(0, self._index - self.PRIORITY_WINDOW)
+        # Reversed: the position on screen is asked for first, its neighbours after.
+        for node in reversed(self._line[lower : self._index + 1]):
+            key = id(node)
+            if key in self._boosted or node.analysis_complete:
+                continue
+            self._boosted.add(key)
+            node.analyze(self._engine, priority=PRIORITY_DEFAULT)
+
+    def _best_move(self) -> Optional[Dict[str, Any]]:
+        """The point to mark: KataGo's first choice, or the variation's next move.
+
+        Inside a variation the marker keeps coming from the anchor's own line, which
+        is also what the next step will play. Those nodes carry no analysis of their
+        own, and asking for one would cost a wait for no gain in the reading.
+        """
+        size = serialize.board_size(self.game)
+        depth = len(self._variation)
+        if depth == 0:
+            return review.best_move(self._line[self._index], size)
+        if depth >= len(self._anchor_pv):
+            return None
+        move = Move.from_gtp(self._anchor_pv[depth], player=self.game.current_node.next_player)
+        if move.is_pass:
+            return None
+        return {**to_display_coords(move.coords, size), "points_lost": 0.0}
+
+    def _emit_review_state(self, command_id: Optional[int] = None) -> None:
+        self._writer.emit(
+            "state",
+            command_id,
+            **serialize.game_state(
+                self.game,
+                self._human_color,
+                status="review",
+                result=self._game_info.get("result"),
+                review={
+                    "move_number": self._index,
+                    "move_count": len(self._line) - 1,
+                    "score_history": [node.score for node in self._line],
+                    "game_info": self._game_info,
+                    "variation_depth": len(self._variation),
+                    "best_move": self._best_move(),
+                },
+            ),
+        )
+
+    def _require_review(self) -> None:
+        if self._status != "review":
+            raise CommandError("not_reviewing", "aucune partie n'est en cours de revue")
+
+    def _refuse_in_review(self) -> None:
+        if self._status == "review":
+            raise CommandError("not_playing", "la partie est en revue, pas en cours")
+
+    # -- ai ------------------------------------------------------------------
 
     @property
     def _ai_color(self) -> str:
@@ -427,6 +521,7 @@ class BridgeSession(KaTrainBase):
     def set_ai(self, command_id, strategy, settings):
         """Switches the AI mode mid-game; it applies from its next move."""
         self._require_game()
+        self._refuse_in_review()
         current = self.config(f"ai/{strategy}")
         if current is None:
             raise CommandError("unknown_ai", f"AI strategy {strategy} not found")

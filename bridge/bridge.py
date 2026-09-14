@@ -47,6 +47,14 @@ def _dispatch(session: BridgeSession, writer: EventWriter, command: Dict[str, An
         session.submit(session.accept_score, command_id)
     elif name == "resume_game":
         session.submit(session.resume_game, command_id)
+    elif name == "load_sgf":
+        session.submit(
+            session.load_sgf, command_id, command.get("name") or "", command["contents"]
+        )
+    elif name == "goto":
+        session.submit(session.goto, command_id, int(command["move_number"]))
+    elif name == "variation":
+        session.submit(session.step_variation, command_id, int(command["step"]))
     elif name == "state":
         session.submit(session.state, command_id)
     else:

@@ -76,6 +76,7 @@ def game_state(
     dead: Optional[List[tuple]] = None,
     ai_strategy: Optional[str] = None,
     ai_settings: Optional[Dict[str, Any]] = None,
+    review: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     node = game.current_node
     payload = {
@@ -93,6 +94,11 @@ def game_state(
         "ai_strategy": ai_strategy,
         "ai_settings": ai_settings,
     }
+    if review is not None:
+        # A review reads the whole record at once: the move number is a position in
+        # the main line rather than the depth of the node on the board, which a
+        # variation would otherwise inflate. The session supplies both.
+        payload.update(review)
     if scoring is not None:
         # Every component of the total travels with it, so the panel can show a sum
         # that adds up instead of a bare figure.
