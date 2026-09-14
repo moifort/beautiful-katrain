@@ -20,7 +20,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "app/Resources/icon/gemini/c-territoire.png"
+SOURCE = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "app/Resources/icon/source.png"
 ICONSET_SIZES = [16, 32, 64, 128, 256, 512, 1024]
 
 CANVAS = 1024

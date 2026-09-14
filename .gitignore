@@ -11,3 +11,6 @@ app/build/
 
 # Spike de packaging : sources et artefacts tiers
 vendor/
+
+# Maquettes de brainstorming
+.superpowers/
