@@ -81,8 +81,11 @@ parcourt et déroule la proposition du moteur — depuis son propre sandbox, seu
 endroit d'où la preuve vaut. Il sort non nul à la première phase qui échoue, et rien
 n'est publié ensuite.
 
-Le GPU d'un runner est paravirtualisé et KataGo y analyse plus lentement que sur un
-Mac de bureau : `MOYO_SMOKE_TIMEOUT` desserre le délai à 900 secondes.
+Un runner GitHub sait la franchir : son GPU est paravirtualisé, mais Metal y tourne
+— « MPSGraph initialized on Apple Paravirtual device » — et la barrière complète y
+prend une trentaine de secondes. `MOYO_SMOKE_TIMEOUT` la desserre tout de même à
+900 secondes : un runner chargé peut être bien plus lent, et cette barrière ne doit
+jamais échouer pour une raison qui n'est pas la bonne.
 
 ### Éprouver sans publier
 

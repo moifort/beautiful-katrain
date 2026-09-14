@@ -3,13 +3,13 @@
 #
 #   ./app/Scripts/release.sh v1.0
 #
-# Pourquoi pas la CI : un runner GitHub a un GPU paravirtualisé. Il sait compiler
-# et signer, il ne sait pas prouver qu'une partie se joue — et c'est précisément ce
-# qu'une release doit garantir. Les tests unitaires, eux, tournent à chaque commit
-# sur GitHub : ils n'ont besoin d'aucune machine particulière.
+# La release de référence tourne sur GitHub Actions (.github/workflows/release.yml).
+# Ce script fait la même chaîne en local, pour le jour où GitHub est indisponible ou
+# pour déboguer une étape sans attendre un runner.
 #
-# Ce Mac a tout : KataGo déjà compilé, les modèles, les certificats dans le
-# trousseau, un vrai GPU. Rien à confier à personne.
+# On a longtemps cru qu'un runner ne pouvait pas franchir la barrière, son GPU étant
+# paravirtualisé. C'est faux, et mesuré : Metal s'y initialise sur « Apple
+# Paravirtual device » et la barrière complète y passe en une trentaine de secondes.
 #
 # Prérequis, une fois pour toutes :
 #   - la fiche de l'application existe sur appstoreconnect.apple.com, avec sa

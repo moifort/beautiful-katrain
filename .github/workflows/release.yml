@@ -184,8 +184,11 @@ jobs:
       # son propre sandbox, seul endroit d'où la preuve vaut. Sort 1 à la première
       # phase qui échoue, et rien n'est publié ensuite.
       #
-      # Le GPU d'un runner est paravirtualisé et KataGo y analyse bien plus
-      # lentement que sur un Mac de bureau : le délai est desserré en conséquence.
+      # Le GPU d'un runner est paravirtualisé, et Metal y tourne très bien :
+      # « MPSGraph initialized on Apple Paravirtual device », barrière complète en
+      # 26 secondes au run 34883944567. Le délai reste large à dessein — un runner
+      # chargé peut être bien plus lent, et cette barrière ne doit jamais échouer
+      # pour une raison qui n'est pas la bonne.
       - name: Gate — the bundle plays and reads back
         env:
           MOYO_SMOKE_TIMEOUT: '900'
