@@ -151,12 +151,16 @@ jobs:
       - name: Assemble the bundle
         env:
           MOYO_SIGN_IDENTITY: ${{ vars.MOYO_SIGN_IDENTITY }}
+          MOYO_INSTALLER_IDENTITY: ${{ vars.MOYO_INSTALLER_IDENTITY }}
         run: |
           set -euo pipefail
           # smoke_only signe en ad-hoc : le sandbox reste réel, donc la barrière
           # reste fidèle, sans mobiliser les certificats de distribution.
+          # Sans ces trois-là, build-app.sh reste en build local : signature
+          # ad-hoc, pas de profil, pas de .pkg. Le sandbox est réel dans les deux
+          # cas, donc la barrière reste fidèle.
           if [ "${{ inputs.smoke_only }}" = "true" ]; then
-            unset MOYO_SIGN_IDENTITY MOYO_PROVISION_PROFILE
+            unset MOYO_SIGN_IDENTITY MOYO_INSTALLER_IDENTITY MOYO_PROVISION_PROFILE
           fi
           MOYO_KATAGO_BINARY="$HOME/.cache/moyo/katago" \
           MOYO_PLAY_MODEL="$HOME/.cache/moyo/models/play.bin.gz" \
@@ -176,12 +180,6 @@ jobs:
         env:
           MOYO_SMOKE_TIMEOUT: '900'
         run: ./app/build/Moyo.app/Contents/MacOS/Moyo --smoke
-
-      - name: Package the signed .pkg
-        if: ${{ inputs.smoke_only != true }}
-        env:
-          MOYO_INSTALLER_IDENTITY: ${{ vars.MOYO_INSTALLER_IDENTITY }}
-        run: ./app/Scripts/package-app.sh
 
       - name: Upload to App Store Connect
         if: ${{ inputs.smoke_only != true && inputs.skip_upload != true }}

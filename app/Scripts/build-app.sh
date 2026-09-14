@@ -25,12 +25,16 @@ ENGINE_CONFIG="${MOYO_ENGINE_CONFIG:-$ROOT/.venv/lib/python3.13/site-packages/ka
 VERSION="${MOYO_VERSION:-0.1.0}"
 BUILD_NUMBER="${MOYO_BUILD_NUMBER:-1}"
 IDENTITY="${MOYO_SIGN_IDENTITY:--}"   # « - » : signature ad-hoc, suffisante en local
+INSTALLER_IDENTITY="${MOYO_INSTALLER_IDENTITY:-}"
+PROFILE="${MOYO_PROVISION_PROFILE:-}"
+TEAM_ID="${MOYO_TEAM_ID:-46C337T7YN}"
 
-# Profil de provisioning App Store. Sur macOS il vit *dans* le bundle, contrairement
-# à iOS où il se dépose dans ~/Library/MobileDevice, et il doit y être avant la
-# signature : signer d'abord puis le glisser invaliderait le sceau. Vide en local,
-# où une signature ad-hoc n'en réclame aucun.
-PROVISION_PROFILE="${MOYO_PROVISION_PROFILE:-}"
+# Trois conditions pour un build de distribution : une identité d'application,
+# une identité d'installeur, et un profil. S'il en manque une, on reste en local.
+DISTRIBUTION=0
+if [ "$IDENTITY" != "-" ] && [ -n "$INSTALLER_IDENTITY" ] && [ -f "$PROFILE" ]; then
+  DISTRIBUTION=1
+fi
 
 for path in "$KATAGO" "$PLAY_MODEL" "$HUMAN_MODEL" "$ENGINE_CONFIG"; do
   [ -e "$path" ] || { echo "manque : $path" >&2; exit 1; }
@@ -54,11 +58,10 @@ cp "$ENGINE_CONFIG" "$CONTENTS/Resources/analysis_config.cfg"
 cp "$PLAY_MODEL" "$CONTENTS/Resources/models/play.bin.gz"
 cp "$HUMAN_MODEL" "$CONTENTS/Resources/models/human.bin.gz"
 cp "$APP_DIR/Resources/icon/Moyo.icns" "$CONTENTS/Resources/Moyo.icns"
-if [ -n "$PROVISION_PROFILE" ]; then
-  [ -f "$PROVISION_PROFILE" ] || { echo "profil de provisioning introuvable : $PROVISION_PROFILE" >&2; exit 1; }
-  cp "$PROVISION_PROFILE" "$CONTENTS/embedded.provisionprofile"
-  echo "    profil de provisioning intégré"
-fi
+# Sur macOS le profil vit *dans* le bundle, contrairement à iOS où il se dépose
+# dans ~/Library/MobileDevice, et il doit y être avant la signature : signer
+# d'abord puis le glisser invaliderait le sceau.
+[ "$DISTRIBUTION" = "1" ] && cp "$PROFILE" "$CONTENTS/embedded.provisionprofile"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -100,6 +103,20 @@ PLIST
 
 WORK="$APP_DIR/build/signing"
 mkdir -p "$WORK"
+if [ "$DISTRIBUTION" = "1" ]; then
+cat > "$WORK/app.entitlements" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.security.app-sandbox</key><true/>
+  <!-- Ouvrir un SGF. L'accès vaut pour la fenêtre, pas pour le pont : c'est
+       l'application qui lit le fichier et en envoie le texte. -->
+  <key>com.apple.security.files.user-selected.read-only</key><true/>
+  <key>com.apple.application-identifier</key><string>$TEAM_ID.com.thibaut.moyo</string>
+  <key>com.apple.developer.team-identifier</key><string>$TEAM_ID</string>
+</dict></plist>
+PLIST
+else
 cat > "$WORK/app.entitlements" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -110,6 +127,7 @@ cat > "$WORK/app.entitlements" <<PLIST
   <key>com.apple.security.files.user-selected.read-only</key><true/>
 </dict></plist>
 PLIST
+fi
 # Un processus enfant qui porte la moindre entitlement en plus de ces deux-là est
 # tué au démarrage par le système. Ne rien ajouter ici.
 cat > "$WORK/helper.entitlements" <<PLIST
@@ -139,3 +157,15 @@ sign --entitlements "$WORK/app.entitlements" "$BUNDLE"
 
 codesign --verify --deep --strict "$BUNDLE"
 echo "==> $BUNDLE ($(du -sm "$BUNDLE" | cut -f1) Mo, signé « $IDENTITY »)"
+
+if [ "$DISTRIBUTION" = "1" ]; then
+  echo "==> Emballage pour l'App Store"
+  PKG="$APP_DIR/build/Moyo.pkg"
+  # productbuild signe le paquet avec l'identité d'installeur, distincte de celle
+  # qui signe l'application. App Store Connect refuse un .pkg signé autrement.
+  productbuild --component "$BUNDLE" /Applications --sign "$INSTALLER_IDENTITY" "$PKG"
+  pkgutil --check-signature "$PKG" >/dev/null
+  echo "==> $PKG ($(du -sm "$PKG" | cut -f1) Mo)"
+else
+  echo "    (build local : ni profil ni identité de distribution, pas de .pkg)"
+fi
