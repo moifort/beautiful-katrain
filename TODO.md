@@ -27,10 +27,6 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
 
 ## Packaging
 
-- **Raise the deployment target to macOS 27.** The first release targets macOS 26
-  because App Store Connect rejects binaries built against beta SDKs, and the
-  macOS 27 SDK only ships in Xcode beta. Bump once Xcode 27 is public.
-
 - **Adaptive thread count.** Derive KataGo's thread count from the core count at
   launch, so entry-level Macs and Ultras both behave sensibly.
 

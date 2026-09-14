@@ -31,12 +31,17 @@ score, le comptage des pierres mortes fonctionnent à l'identique.
 | Réglages moteur | Configuration figée, aucune UI de réglage |
 | Langues | Anglais et français |
 
-### Pourquoi pas macOS 27
+### Pourquoi macOS 26
 
-macOS 27 est en préversion, et son SDK n'existe que dans Xcode bêta. **App Store
-Connect refuse les binaires compilés contre un SDK bêta.** Viser 27 rendrait le
-projet non soumissible jusqu'à la sortie publique de Xcode 27. Le passage à 27 est
-consigné dans `TODO.md`.
+`LSMinimumSystemVersion` est un plancher, pas un plafond : une application construite
+pour macOS 26 tourne telle quelle sur macOS 27. Monter la cible ne ferait que retirer
+des utilisateurs sans rien apporter. Elle ne bougera que le jour où une API exclusive à
+une version plus récente deviendra nécessaire — ce n'est pas une dette, c'est le
+réglage correct.
+
+S'y ajoute une contrainte de calendrier : macOS 27 est en préversion et son SDK n'existe
+que dans Xcode bêta, or **App Store Connect refuse les binaires compilés contre un SDK
+bêta.** Viser 27 rendrait le projet non soumissible.
 
 ### Pourquoi un nom sans « KaTrain »
 
