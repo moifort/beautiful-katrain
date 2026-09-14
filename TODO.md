@@ -53,16 +53,20 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
 
 ## Release
 
-- **The submission stage stops at the upload.** The workflow uploads the `.pkg` to
-  App Store Connect and stops there; attaching the build to its version, setting the
-  release notes and submitting for review are still done by hand. Vinarium does it
-  with fastlane and a CHANGELOG per locale, which Moyo has neither of yet.
+- **The signing and submission halves have never run.** They are written from
+  Vinarium's workflow and from the App Store Connect API, but nothing has exercised
+  them end to end — there has been no release. `workflow_dispatch` with `smoke_only`
+  covers everything up to the gate without a certificate; `skip_upload` covers the
+  signed `.pkg`. Those two should be run before a tag is ever pushed.
 
-- **The signing half of the workflow has never run.** It is written from Vinarium's
-  and waits on three secrets that do not exist: the *Apple Distribution* and *Mac
-  Installer Distribution* certificates, and the macOS provisioning profile. Use
-  `workflow_dispatch` with `smoke_only` to exercise everything up to the gate
-  without them.
+- **A runner's GPU is paravirtualised.** KataGo analyses far slower there than on a
+  desktop Mac, hence `MOYO_SMOKE_TIMEOUT=900` on the gate. If Metal turns out to be
+  unavailable altogether on the runner image, the gate has to move back to a
+  self-hosted Mac — it is the one step that cannot be faked.
+
+- **Release notes come from the tag annotation, in French only.** Every App Store
+  locale gets the same text. That is honest while the interface is hardcoded French;
+  it stops being honest the day the String Catalog lands.
 
 ## Marketing
 

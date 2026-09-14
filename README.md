@@ -69,24 +69,49 @@ swift test --package-path app
 
 ## Release
 
-A tag `v*` runs `.github/workflows/release.yml`: unit suites, KataGo, the bundle,
-then the gate, then App Store Connect. `workflow_dispatch` adds `smoke_only` to
-stop after the gate and `skip_upload` to stop after the `.pkg`.
+An annotated tag `v*` runs `.github/workflows/release.yml`, on GitHub's own macOS
+runner. Nothing in it runs on an ordinary commit: KataGo, the models and the gate
+are paid for when a release is asked for.
+
+```bash
+git tag -a v1.0 -m "Ce qui change dans cette version…"
+git push origin v1.0
+```
+
+The tag's annotation becomes the "What's New" text, so a version's notes live with
+the version rather than in a changelog.
+
+The chain: unit suites → KataGo (compiled once, then cached) → the models (fetched
+and checksummed) → the bundle → **the gate** → `.pkg` → App Store Connect → attach
+the build and submit for review.
 
 The gate is `Moyo --smoke`. It plays a move against KataGo, opens a record, walks
 it, and unrolls the engine's continuation — from inside the bundle's own sandbox,
 the only place the proof is worth anything. It exits non-zero on the first phase
-that fails, and nothing is uploaded after that.
+that fails, and nothing is uploaded after that. A runner's GPU is paravirtualised
+and analyses slowly, hence `MOYO_SMOKE_TIMEOUT`.
 
-It runs on a self-hosted Apple Silicon runner, which has to live in a logged-in GUI
-session — a launchd *agent*, not a daemon. Without a window server there is no
-Metal, and the gate fails for a reason that has nothing to do with the release.
+`workflow_dispatch` adds `smoke_only`, which stops after the gate and needs no
+certificate at all, and `skip_upload`, which stops after the `.pkg`.
 
-Secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `MACOS_DIST_CERT_P12`,
-`MACOS_DIST_CERT_PASSWORD`, `MACOS_INSTALLER_CERT_P12`,
-`MACOS_INSTALLER_CERT_PASSWORD`, `MACOS_PROVISION_PROFILE`. Variables:
-`MOYO_PLAY_MODEL`, `MOYO_HUMAN_MODEL_FILE`, `MOYO_SIGN_IDENTITY`,
-`MOYO_INSTALLER_IDENTITY`.
+### Before the first release
+
+The App Store Connect API cannot create an app record. Create it once on
+appstoreconnect.apple.com — name, SKU, language — then set category, age rating,
+privacy policy, pricing and screenshots there. Only then can the workflow attach a
+build and submit it.
+
+Signing is scripted. With the two certificates in your keychain and a Mac App Store
+provisioning profile downloaded:
+
+```bash
+./app/Scripts/signing-secrets.sh ~/Downloads/Moyo.provisionprofile
+```
+
+It exports the identities, encodes them, and sets `MACOS_SIGNING_P12`,
+`MACOS_SIGNING_P12_PASSWORD`, `MACOS_PROVISION_PROFILE`, `MOYO_SIGN_IDENTITY` and
+`MOYO_INSTALLER_IDENTITY`. `ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8` are
+account-wide and already in place.
 
 ## Limits
 
