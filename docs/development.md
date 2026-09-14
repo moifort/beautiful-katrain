@@ -56,40 +56,60 @@ swift test --package-path app
 
 ## Release
 
-Releases are made from a Mac, with one command:
+Un tag annoté déclenche tout, sur GitHub Actions :
 
 ```bash
 git tag -a v1.0 -m "Ce qui change dans cette version…"
-MOYO_PROVISION_PROFILE=~/Downloads/Moyo.provisionprofile \
+git push origin v1.0
+```
+
+L'annotation du tag devient le texte « Nouveautés » de l'App Store, si bien que les
+notes d'une version vivent avec la version plutôt que dans un changelog.
+
+Un seul job, et c'est délibéré : découper obligerait à faire transiter un bundle de
+257 Mo entre jobs par artefacts, pour rien. La chaîne est donc séquentielle — suites
+unitaires, KataGo, modèles, bundle signé et `.pkg`, **la barrière**, App Store
+Connect, attachement de la build et soumission, release GitHub.
+
+KataGo et les modèles sont mis en cache : la première release paye vingt minutes de
+compilation, les suivantes non.
+
+### La barrière
+
+`Moyo --smoke`. Le bundle joue un coup contre KataGo, ouvre un enregistrement, le
+parcourt et déroule la proposition du moteur — depuis son propre sandbox, seul
+endroit d'où la preuve vaut. Il sort non nul à la première phase qui échoue, et rien
+n'est publié ensuite.
+
+Le GPU d'un runner est paravirtualisé et KataGo y analyse plus lentement que sur un
+Mac de bureau : `MOYO_SMOKE_TIMEOUT` desserre le délai à 900 secondes.
+
+### Éprouver sans publier
+
+Deux arrêts d'urgence, en déclenchement manuel depuis l'onglet Actions ou en ligne
+de commande :
+
+```bash
+gh workflow run release.yml -f smoke_only=true    # s'arrête après la barrière, sans certificat
+gh workflow run release.yml -f skip_upload=true   # s'arrête avec le .pkg, sans rien envoyer
+```
+
+### Depuis ce Mac
+
+`app/Scripts/release.sh` fait la même chaîne en local, pour le jour où GitHub est
+indisponible ou pour déboguer une étape sans attendre un runner :
+
+```bash
+MOYO_PROVISION_PROFILE=~/.moyo-signing/Moyo.provisionprofile \
 ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_PATH=… \
   ./app/Scripts/release.sh v1.0
 ```
 
-The tag's annotation becomes the "What's New" text, so a version's notes live with
-the version rather than in a changelog.
+Il accepte les mêmes arrêts : `MOYO_SMOKE_ONLY=1` et `MOYO_SKIP_UPLOAD=1`.
 
-The chain: unit suites → KataGo → the models, fetched and checksummed → the signed
-bundle and its `.pkg` → **the gate** → App Store Connect → attach the build and
-submit for review.
+### Avant la première release
 
-The gate is `Moyo --smoke`. It plays a move against KataGo, opens a record, walks
-it, and unrolls the engine's continuation — from inside the bundle's own sandbox,
-the only place the proof is worth anything. It exits non-zero on the first phase
-that fails, and the release stops there.
-
-`MOYO_SMOKE_ONLY=1` stops after the gate and needs no certificate at all;
-`MOYO_SKIP_UPLOAD=1` stops with the `.pkg` in hand.
-
-CI runs the two unit suites and nothing else, on every commit
-(`.github/workflows/test.yml`). It does not build the bundle and does not run the
-gate: a GitHub runner's GPU is paravirtualised, so it can compile and sign but it
-cannot show that a game is played — which is the one thing a release has to
-guarantee. This Mac has everything anyway: KataGo compiled, the models, the
-certificates in the keychain, a real GPU.
-
-### Before the first release
-
-The App Store Connect API cannot create an app record. Create it once on
-appstoreconnect.apple.com — name, SKU, language — then set category, age rating,
-privacy policy, pricing and screenshots there. Only then can a build be attached
-and submitted.
+L'API App Store Connect ne sait pas créer la fiche d'une application. Elle doit
+exister sur appstoreconnect.apple.com — nom, UGS, langue — avec sa catégorie, sa
+classification d'âge, sa politique de confidentialité et son prix. Tout cela est
+exigé avant la première soumission. Ensuite seulement une build peut être attachée.

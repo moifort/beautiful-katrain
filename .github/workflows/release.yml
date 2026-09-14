@@ -1,0 +1,241 @@
+name: Release
+
+# Rien ici ne tourne à chaque commit : ni KataGo, ni les modèles, ni la barrière.
+# C'est une chaîne de release, payée au moment où on demande une release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      smoke_only:
+        description: 'Build the bundle, run the gate, and stop there (no signing, no upload)'
+        required: false
+        type: boolean
+        default: false
+      skip_upload:
+        description: 'Build, gate and package, but stop before App Store Connect'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # publier la release GitHub du tag
+
+concurrency:
+  group: release-macos
+  cancel-in-progress: false
+
+env:
+  BUNDLE_ID: com.thibaut.moyo
+
+jobs:
+  # Un seul job, et c'est délibéré. Découper obligerait à faire transiter un
+  # bundle de 257 Mo entre jobs par artefacts : plus lent, plus fragile, et sans
+  # rien gagner. Tout ce qui suit a besoin de ce qui précède, dans l'ordre.
+  release:
+    name: 🪨 Build, gate, upload & submit
+    runs-on: macos-26
+    timeout-minutes: 150
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # le compte de commits et l'annotation du tag en dépendent
+
+      - name: Select the latest final Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Compute version numbers
+        run: |
+          set -euo pipefail
+          BUILD=$(git rev-list --count HEAD)
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            MARKETING="${GITHUB_REF_NAME#v}"
+          else
+            MARKETING="0.0.0-$(git rev-parse --short HEAD)"
+          fi
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "MARKETING=$MARKETING" >> "$GITHUB_ENV"
+          echo "Releasing Moyo $MARKETING ($BUILD)"
+
+      - name: Run the unit suites
+        run: |
+          set -euo pipefail
+          # Rapides toutes les deux, et bien plus précises que la barrière sur *ce*
+          # qui casse. Les passer d'abord coûte quelques secondes.
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r bridge/requirements.txt
+          .venv/bin/python -m pytest bridge/tests -q
+          swift test --package-path app
+
+      # KataGo met une vingtaine de minutes à compiler. Seul le binaire est mis en
+      # cache, pas les 3 Go de vendor/ : c'est tout ce dont build-app.sh a besoin.
+      - name: Restore the KataGo binary
+        id: katago-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/moyo/katago
+          key: katago-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('app/Scripts/build-katago.sh') }}
+
+      - name: Build KataGo
+        if: steps.katago-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          brew install cmake ninja pkgconf
+          ./app/Scripts/build-katago.sh
+          mkdir -p ~/.cache/moyo
+          cp vendor/katago-src/cpp/build/katago ~/.cache/moyo/katago
+
+      # Les modèles pèsent 190 Mo et ne peuvent pas vivre dans le dépôt. Le script
+      # vérifie leur empreinte : une URL qui se met à servir autre chose produirait
+      # une application qui joue différemment sans que rien ne le signale.
+      - name: Restore the KataGo models
+        id: models-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/moyo/models
+          key: models-${{ hashFiles('app/Scripts/fetch-models.sh') }}
+
+      - name: Fetch the KataGo models
+        if: steps.models-cache.outputs.cache-hit != 'true'
+        run: ./app/Scripts/fetch-models.sh
+
+      - name: Import the signing identities
+        if: ${{ inputs.smoke_only != true }}
+        env:
+          MACOS_SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          MACOS_SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          MACOS_PROVISION_PROFILE: ${{ secrets.MACOS_PROVISION_PROFILE }}
+        run: |
+          set -euo pipefail
+          # Un trousseau jetable plutôt que celui de session : sur un runner, le
+          # trousseau de session est verrouillé et codesign attendrait un mot de
+          # passe que personne ne viendra taper.
+          #
+          # `security export` ne sait pas extraire une identité nommée, donc le .p12
+          # les porte toutes ; MOYO_SIGN_IDENTITY dit laquelle signe. Voir
+          # app/Scripts/signing-secrets.sh, qui fabrique ces secrets.
+          if [ -z "$MACOS_SIGNING_P12" ]; then
+            echo "::error::MACOS_SIGNING_P12 est vide — lancez app/Scripts/signing-secrets.sh"
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/moyo-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERT="$RUNNER_TEMP/signing.p12"
+          printf '%s' "$MACOS_SIGNING_P12" | base64 -d > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$MACOS_SIGNING_P12_PASSWORD" \
+            -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed 's/["[:space:]]//g')
+          rm -f "$CERT"
+          security find-identity -v "$KEYCHAIN"
+
+          # Sur macOS le profil vit *dans* le bundle, contrairement à iOS où il se
+          # dépose dans ~/Library/MobileDevice. build-app.sh le pose avant de signer.
+          PROFILE="$RUNNER_TEMP/moyo.provisionprofile"
+          printf '%s' "$MACOS_PROVISION_PROFILE" | base64 -d > "$PROFILE"
+          echo "MOYO_PROVISION_PROFILE=$PROFILE" >> "$GITHUB_ENV"
+
+      - name: Assemble the bundle
+        env:
+          MOYO_SIGN_IDENTITY: ${{ vars.MOYO_SIGN_IDENTITY }}
+          MOYO_INSTALLER_IDENTITY: ${{ vars.MOYO_INSTALLER_IDENTITY }}
+        run: |
+          set -euo pipefail
+          # Sans ces trois-là, build-app.sh reste en build local : signature ad-hoc,
+          # pas de profil, pas de .pkg. Le sandbox est réel dans les deux cas, donc
+          # la barrière qui suit reste fidèle.
+          if [ "${{ inputs.smoke_only }}" = "true" ]; then
+            unset MOYO_SIGN_IDENTITY MOYO_INSTALLER_IDENTITY MOYO_PROVISION_PROFILE
+          fi
+          MOYO_KATAGO_BINARY="$HOME/.cache/moyo/katago" \
+          MOYO_PLAY_MODEL="$HOME/.cache/moyo/models/play.bin.gz" \
+          MOYO_HUMAN_MODEL_FILE="$HOME/.cache/moyo/models/human.bin.gz" \
+          MOYO_VERSION="$MARKETING" MOYO_BUILD_NUMBER="$BUILD" \
+            ./app/Scripts/build-app.sh release
+
+      # ── La barrière ────────────────────────────────────────────────────────
+      # Le bundle qu'on s'apprête à publier joue un coup contre KataGo, ouvre un
+      # enregistrement, le parcourt, et déroule la proposition du moteur — depuis
+      # son propre sandbox, seul endroit d'où la preuve vaut. Sort 1 à la première
+      # phase qui échoue, et rien n'est publié ensuite.
+      #
+      # Le GPU d'un runner est paravirtualisé et KataGo y analyse bien plus
+      # lentement que sur un Mac de bureau : le délai est desserré en conséquence.
+      - name: Gate — the bundle plays and reads back
+        env:
+          MOYO_SMOKE_TIMEOUT: '900'
+        run: ./app/build/Moyo.app/Contents/MacOS/Moyo --smoke
+
+      - name: Upload to App Store Connect
+        if: ${{ inputs.smoke_only != true && inputs.skip_upload != true }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "${{ secrets.ASC_KEY_P8 }}" \
+            > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+          xcrun altool --upload-app --type macos \
+            --file app/build/Moyo.pkg \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      # `altool` ne fait que déposer un fichier : il n'apparaît sur aucune version
+      # et rien n'est soumis. Cette étape attache la build, pose les nouveautés
+      # lues dans l'annotation du tag, et remet le tout à la revue.
+      #
+      # Sur tag seulement : un déclenchement manuel s'arrête après l'envoi, pour
+      # qu'on puisse regarder avant de soumettre.
+      - name: Attach the build and submit for review
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && inputs.smoke_only != true && inputs.skip_upload != true }}
+        run: |
+          set -euo pipefail
+          # Les notes vivent avec le tag plutôt que dans un CHANGELOG : une version
+          # a un texte, et ce texte a une place évidente.
+          #
+          #   git tag -a v1.0 -m "Ce qui change dans cette version…"
+          git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.txt
+          if [ ! -s notes.txt ]; then
+            git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME" > notes.txt
+          fi
+          echo "---- What's New ----"; cat notes.txt
+
+          .venv/bin/pip install --quiet -r app/Scripts/requirements-release.txt
+          printf '%s' "${{ secrets.ASC_KEY_P8 }}" > "$RUNNER_TEMP/AuthKey.p8"
+          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" \
+            .venv/bin/python ./app/Scripts/submit-app.py \
+              --bundle-id "$BUNDLE_ID" \
+              --version "$MARKETING" \
+              --build "$BUILD" \
+              --notes-file notes.txt
+          rm -f "$RUNNER_TEMP/AuthKey.p8"
+
+      - name: Publish the GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && inputs.smoke_only != true && inputs.skip_upload != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "Moyo $MARKETING" --notes-file notes.txt
+          else
+            gh release create "$GITHUB_REF_NAME" --title "Moyo $MARKETING" --notes-file notes.txt
+          fi
+
+      - name: Archive the .pkg as a run artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Moyo-pkg
+          path: app/build/Moyo.pkg
+          if-no-files-found: ignore
+          retention-days: 14
