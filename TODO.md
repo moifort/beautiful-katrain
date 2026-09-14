@@ -51,6 +51,19 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
   turn to mush at the smallest sizes; a hand-drawn 16 and 32 px variant, with the
   grid dropped entirely, would sharpen the Finder list view.
 
+## Release
+
+- **The submission stage stops at the upload.** The workflow uploads the `.pkg` to
+  App Store Connect and stops there; attaching the build to its version, setting the
+  release notes and submitting for review are still done by hand. Vinarium does it
+  with fastlane and a CHANGELOG per locale, which Moyo has neither of yet.
+
+- **The signing half of the workflow has never run.** It is written from Vinarium's
+  and waits on three secrets that do not exist: the *Apple Distribution* and *Mac
+  Installer Distribution* certificates, and the macOS provisioning profile. Use
+  `workflow_dispatch` with `smoke_only` to exercise everything up to the gate
+  without them.
+
 ## Marketing
 
 - **Landing page.** A page advertising the app and linking to its App Store listing.

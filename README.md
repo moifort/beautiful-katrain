@@ -47,7 +47,8 @@ The bundle is self-contained — interpreter, engine, models and configuration a
 live inside it, because the App Store sandbox forbids reaching outside. It weighs
 about 250 MB, most of it the two KataGo models.
 
-To verify a built bundle end to end, from inside its own sandbox:
+To verify a built bundle end to end, from inside its own sandbox — it plays a move
+and reads a record back, and exits non-zero on the first phase that fails:
 
 ```bash
 ./app/build/Moyo.app/Contents/MacOS/Moyo --smoke
@@ -65,6 +66,27 @@ engine — so a game played this way behaves exactly like KaTrain.
 .venv/bin/python -m pytest bridge/tests
 swift test --package-path app
 ```
+
+## Release
+
+A tag `v*` runs `.github/workflows/release.yml`: unit suites, KataGo, the bundle,
+then the gate, then App Store Connect. `workflow_dispatch` adds `smoke_only` to
+stop after the gate and `skip_upload` to stop after the `.pkg`.
+
+The gate is `Moyo --smoke`. It plays a move against KataGo, opens a record, walks
+it, and unrolls the engine's continuation — from inside the bundle's own sandbox,
+the only place the proof is worth anything. It exits non-zero on the first phase
+that fails, and nothing is uploaded after that.
+
+It runs on a self-hosted Apple Silicon runner, which has to live in a logged-in GUI
+session — a launchd *agent*, not a daemon. Without a window server there is no
+Metal, and the gate fails for a reason that has nothing to do with the release.
+
+Secrets: `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY_P8`, `MACOS_DIST_CERT_P12`,
+`MACOS_DIST_CERT_PASSWORD`, `MACOS_INSTALLER_CERT_P12`,
+`MACOS_INSTALLER_CERT_PASSWORD`, `MACOS_PROVISION_PROFILE`. Variables:
+`MOYO_PLAY_MODEL`, `MOYO_HUMAN_MODEL_FILE`, `MOYO_SIGN_IDENTITY`,
+`MOYO_INSTALLER_IDENTITY`.
 
 ## Limits
 
