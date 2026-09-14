@@ -75,7 +75,7 @@ jobs:
           # Rapides toutes les deux, et bien plus précises que la barrière sur *ce*
           # qui casse. Les passer d'abord coûte quelques secondes.
           python3 -m venv .venv
-          .venv/bin/pip install --quiet -r bridge/requirements.txt
+          .venv/bin/pip install --quiet -r bridge/requirements-dev.txt
           .venv/bin/python -m pytest bridge/tests -q
           swift test --package-path app
 

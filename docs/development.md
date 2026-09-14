@@ -20,7 +20,7 @@ and `pkgconf` from Homebrew.
 git clone https://github.com/moifort/moyo-go.git
 cd moyo-go
 python3 -m venv .venv
-.venv/bin/pip install -r bridge/requirements.txt
+.venv/bin/pip install -r bridge/requirements-dev.txt
 ./app/Scripts/build-katago.sh        # ~20 min, once
 ./app/Scripts/build-app.sh
 open app/build/Moyo.app

@@ -1,0 +1,5 @@
+# Ce qu'il faut en plus pour faire tourner les tests du pont.
+# requirements.txt ne porte que ce dont l'application a besoin à l'exécution :
+# c'est lui, et lui seul, qui détermine ce qui part dans le bundle.
+-r requirements.txt
+pytest==9.1.1
