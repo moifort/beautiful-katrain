@@ -21,6 +21,13 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
 
 - **Teaching mode.** KaTrain's per-move feedback on mistakes and better options.
 
+## Design
+
+- **Revisit the icon at 16 px.** Generated with Gemini 3 Pro Image, then masked to
+  the macOS squircle by `app/Scripts/make-icon.py`. The wood grain and the grid
+  turn to mush at the smallest sizes; a hand-drawn 16 and 32 px variant, with the
+  grid dropped entirely, would sharpen the Finder list view.
+
 ## Marketing
 
 - **Landing page.** A page advertising the app and linking to its App Store listing.

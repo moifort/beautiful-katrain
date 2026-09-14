@@ -47,7 +47,7 @@ cp -R "$PAYLOAD/bridge" "$CONTENTS/Resources/bridge"
 cp "$ENGINE_CONFIG" "$CONTENTS/Resources/analysis_config.cfg"
 cp "$PLAY_MODEL" "$CONTENTS/Resources/models/play.bin.gz"
 cp "$HUMAN_MODEL" "$CONTENTS/Resources/models/human.bin.gz"
-[ -f "$APP_DIR/build/Moyo.icns" ] && cp "$APP_DIR/build/Moyo.icns" "$CONTENTS/Resources/Moyo.icns"
+cp "$APP_DIR/Resources/icon/Moyo.icns" "$CONTENTS/Resources/Moyo.icns"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
