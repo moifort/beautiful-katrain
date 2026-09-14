@@ -8,3 +8,6 @@ DerivedData/
 xcuserdata/
 app/.build/
 app/build/
+
+# Spike de packaging : sources et artefacts tiers
+vendor/
