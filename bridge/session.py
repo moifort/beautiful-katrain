@@ -17,6 +17,7 @@ os.environ.setdefault("KIVY_NO_ARGS", "1")
 os.environ.setdefault("KIVY_NO_CONSOLELOG", "1")
 
 from katrain.core.ai import generate_ai_move
+from enginepaths import bundle_engine_overrides
 from katrain.core.base_katrain import KaTrainBase
 from katrain.core.constants import (
     AI_STRATEGIES_RECOMMENDED_ORDER,
@@ -97,7 +98,19 @@ class BridgeSession(KaTrainBase):
         self._status = "playing"  # playing | scoring | finished
         self._dead: set = set()
         super().__init__()
+        self._apply_bundle_paths()
         self.controls = NullControls(self._log_stderr)
+
+    def _apply_bundle_paths(self) -> None:
+        """Laisse le bundle imposer ses chemins moteur, s'il y en a un.
+
+        Dans l'application distribuée, le sandbox interdit ~/.katrain : binaire,
+        modèles et configuration vivent dans le bundle. Hors bundle, aucune
+        variable n'est posée et la configuration de l'utilisateur reste intacte.
+        """
+        overrides = bundle_engine_overrides(os.environ)
+        if overrides:
+            self._config.setdefault("engine", {}).update(overrides)
 
     # -- logging -------------------------------------------------------------
     # The base class prints to stdout, which is the protocol channel. Everything

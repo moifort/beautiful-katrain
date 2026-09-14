@@ -40,7 +40,9 @@ CODE="$OUT/python/lib/python3.13/site-packages"
 # rank_label utilise pour les modes à rang calibré. Le reste du paquet (gui, img,
 # sounds, fonts, KataGo, models) ne sert qu'à l'application Kivy amont.
 mkdir -p "$CODE/katrain/gui"
-cp "$SITE_PACKAGES/katrain/__init__.py" "$CODE/katrain/"
+# config.json porte les valeurs par défaut que KaTrainBase charge au démarrage :
+# sans lui, la session n'a pas de section « engine » à surcharger.
+cp "$SITE_PACKAGES/katrain/__init__.py" "$SITE_PACKAGES/katrain/config.json" "$CODE/katrain/"
 cp -R "$SITE_PACKAGES/katrain/core" "$CODE/katrain/"
 cp -R "$SITE_PACKAGES/katrain/i18n" "$CODE/katrain/"
 cp "$SITE_PACKAGES/katrain/gui/__init__.py" "$SITE_PACKAGES/katrain/gui/theme.py" "$CODE/katrain/gui/"

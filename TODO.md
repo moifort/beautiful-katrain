@@ -38,6 +38,11 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
   releases need to be pulled in deliberately, and the Kivy shim re-checked against
   them.
 
+- **Trim the embedded Python further.** Pruning python-build-standalone takes it from
+  67 MB to 53 MB, still the second largest item in the bundle after the models. Freezing
+  the standard library into a zip, or dropping unused encodings and `lib-dynload`
+  modules, should claw back more.
+
 ## Out of scope
 
 - **Intel and universal builds.** Apple Silicon only, by design.

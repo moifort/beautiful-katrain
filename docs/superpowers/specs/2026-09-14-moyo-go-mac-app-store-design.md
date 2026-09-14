@@ -67,17 +67,22 @@ Moyo.app/Contents/
 ├── embedded.provisionprofile     profil Mac App Distribution
 ├── MacOS/Moyo                    exécutable Swift
 ├── Helpers/
-│   ├── python3.13                python-build-standalone, Info.plist en section __TEXT
-│   └── katago                    recompilé Metal, sans entraînement distribué
-├── Frameworks/Python.framework/  stdlib élaguée, chaque .so signé
+│   └── katago                    recompilé Metal, dépendances statiques
 └── Resources/
+    ├── python/                   python-build-standalone élagué (67 -> 53 Mo)
+    │   └── bin/python3.13        signé avec --identifier, faute d'Info.plist
     ├── Moyo.icns
     ├── analysis_config.cfg
     ├── models/                   kata1-b18c384nbt (93 Mo) + b18c384nbt-humanv0 (94 Mo)
     └── bridge/                   bridge/*.py, katrain/core vendoré, shim kivy, pysgf
 ```
 
-Total estimé : **~270 Mo**.
+Python reste dans son arborescence plutôt qu'éclaté entre `Helpers/` et
+`Frameworks/` : python-build-standalone localise sa bibliothèque standard relativement à
+l'exécutable. Il n'a pas d'`Info.plist`, d'où `codesign --identifier`, sans quoi le
+système ne lui trouve pas d'identifiant de bundle et refuse de l'exécuter sous sandbox.
+
+Total mesuré sur le bundle de la phase 0 : **256 Mo**.
 
 Les deux modèles sont obligatoires : les modes human-like tirent leur policy de
 `humanv0`, mais le score et l'ownership viennent du modèle principal.
@@ -100,18 +105,41 @@ Une cinquantaine de lignes suffisent, et le bundle se passe de Kivy (36 Mo), de 
 (LGPL) et de ffpyplayer (FFmpeg) — trois dépendances dont deux posaient un problème de
 licence en distribution.
 
-`katrain/core` est vendoré tel quel. Sont exclus `gui/`, `img/`, `sounds/`, `fonts/`,
-ainsi que le `KataGo/` et les `models/` que le paquet embarque déjà : 111 des 116 Mo.
+Le périmètre vendoré est plus large que `core/` seul, trois dépendances n'étant
+visibles qu'à l'exécution : `gui/theme.py` (233 lignes de constantes, aucun import) dont
+`lang.py` dépend, `i18n/` (608 Ko) que `rank_label` utilise pour les rangs calibrés, et
+`config.json`, d'où `KaTrainBase` tire ses valeurs par défaut.
+
+Sont exclus `img/`, `sounds/`, `fonts/`, le reste de `gui/`, ainsi que le `KataGo/` et
+les `models/` que le paquet embarque déjà. Du paquet de 116 Mo il reste **1,3 Mo**.
+
+### 4.1 bis Le shim chardet
+
+`pysgf` importe `chardet`, qui est en **LGPL-2.1** — la famille de licences qu'on écarte
+justement en se passant de pygame. Or `chardet.detect()` n'est appelé que dans
+`from_file()`, pour deviner l'encodage d'un SGF lu sur disque : un chemin que la v1
+n'emprunte jamais. Un shim fournissant la seule fonction utilisée suffit.
 
 ### 4.2 KataGo redistribuable
 
-Le binaire Homebrew **n'est pas redistribuable** : il est lié à une dizaine de dylibs
-Homebrew — `libzip`, `protobuf`, tout Abseil — parce que Homebrew active
-l'entraînement distribué.
+Le binaire Homebrew **n'est pas redistribuable** : il est lié à **84 dylibs** Homebrew.
 
-Recompilation depuis les sources en `-DUSE_BACKEND=METAL -DBUILD_DISTRIBUTED=OFF`, ce
-qui élimine protobuf et Abseil. Restent zlib et libzip, liés statiquement. Binaire
-arm64, signé par nous.
+La raison n'est pas l'entraînement distribué, contrairement à ce qu'on pouvait croire :
+`BUILD_DISTRIBUTED` vaut déjà 0 par défaut. C'est le **backend Metal lui-même** qui les
+tire. En 1.18.2, Metal est « hybride MPSGraph + CoreML », et son composant CoreML
+(`external/katagocoreml`, ajouté sans condition) dépend de protobuf et d'une trentaine
+de modules Abseil. Il n'existe aucune option pour le désactiver.
+
+La sortie retenue est de compiler Abseil, protobuf et libzip **en statique** dans un
+préfixe local, puis de pointer `PKG_CONFIG_PATH` et `CMAKE_PREFIX_PATH` dessus. zlib
+vient du SDK système.
+
+Résultat mesuré : **11 Mo, zéro dépendance hors système**. Une seule signature au lieu
+de 85, et aucun `install_name` à réécrire.
+
+La toolchain doit être forcée sur Xcode 26.6 et son SDK 26.5 : `/usr/bin/swiftc` se
+retrouve sinon associé au SDK des Command Line Tools, plus récent que lui, et refuse de
+compiler.
 
 ### 4.3 BridgeLocation
 
@@ -186,9 +214,11 @@ Les deux suites existantes restent vertes après le renommage. Trois ajouts :
 
 ## 9. Risques
 
-1. **KataGo en Metal sous sandbox.** Le seul risque capable d'invalider l'approche, et
-   le seul qu'aucune documentation ne tranche. Il se prouve empiriquement, d'où la
-   phase 0.
+1. ~~**KataGo en Metal sous sandbox.**~~ **Levé par la phase 0**, le 2026-09-14. Dans
+   un bundle signé et sandboxé, la chaîne application → python → katago tient, les deux
+   modèles se chargent et KataGo joue : `Metal backend: MPSGraph initialized on Apple
+   M1 Pro`, puis `Initialized MPSGraph GPU-only mode`. KataGo écrit son `homeDataDir`
+   dans le conteneur du sandbox sans qu'on ait rien à régler.
 2. **L'identifiant de bundle du helper Python.** Piège documenté sur les forums Apple :
    sans `Info.plist` embarqué en section `__TEXT`, le système ne trouve pas
    d'identifiant à l'exécutable Python.
@@ -200,7 +230,7 @@ Les deux suites existantes restent vertes après le renommage. Trois ajouts :
 
 | Phase | Contenu | Sort si elle échoue |
 |---|---|---|
-| **0** | Spike : `katago` Metal + Python dans un bundle signé et sandboxé | Tout le reste est à revoir |
+| ~~**0**~~ | ~~Spike~~ — **fait le 2026-09-14**, concluant | — |
 | **1** | Renommage en Moyo | — |
 | **2** | Bundle autonome et relocalisable | — |
 | **3** | Sandbox, entitlements, chaîne de signature | — |
