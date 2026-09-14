@@ -3,6 +3,8 @@ import SwiftUI
 
 @main
 struct MoyoApp: App {
+    @NSApplicationDelegateAdaptor(RecordOpeningDelegate.self) private var delegate
+
     init() {
         // `Moyo --smoke` vérifie le bundle depuis son propre sandbox, puis sort.
         // C'est le seul point d'où le test est fidèle : les helpers héritent du
@@ -21,6 +23,7 @@ struct MoyoApp: App {
         .commands {
             SidebarCommands()
             GameCommands()
+            ReviewCommands()
         }
     }
 }

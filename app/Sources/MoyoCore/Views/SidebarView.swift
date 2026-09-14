@@ -10,7 +10,9 @@ public struct SidebarView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if let state = session.state, let scoring = state.scoring {
+            if let state = session.state, state.isReviewing {
+                ReviewPanel(session: session, state: state)
+            } else if let state = session.state, let scoring = state.scoring {
                 ScoringPanel(detail: scoring) {
                     NotificationCenter.default.post(name: .moyoNewGameRequested, object: nil)
                 }
@@ -138,6 +140,150 @@ public struct SidebarView: View {
         ) {
             Button("Abandonner", role: .destructive) { session.resign() }
             Button("Continuer", role: .cancel) {}
+        }
+    }
+}
+
+/// What the sidebar shows while a record is being read.
+///
+/// A review has no turn to announce and no action to offer: what it has is a
+/// position in a record, the two players, and an engine still catching up. The chart
+/// covers the whole game from the start, since every move of it already exists.
+struct ReviewPanel: View {
+    @Bindable var session: GameSession
+    let state: GameState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            divider
+            ScoreChart(
+                scores: session.scoresFromPlayerSide,
+                moveNumber: state.moveNumber,
+                annotation: session.currentLead
+            )
+            if let progress = session.analysisProgress {
+                gauge(done: progress.done, total: progress.total)
+            }
+            divider
+            players
+            PlayerTable(rows: rows)
+            Spacer(minLength: 0)
+            footer
+        }
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Theme.hairline).frame(height: 0.5)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text("Coup \(state.moveNumber)")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.primaryText)
+                    .monospacedDigit()
+                if let count = state.moveCount {
+                    Text("sur \(count)")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.secondaryText)
+                        .monospacedDigit()
+                }
+                Spacer(minLength: 0)
+            }
+            if let depth = state.variationDepth, depth > 0 {
+                Text("Proposition de KataGo, \(depth) coup\(depth > 1 ? "s" : "")")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.bestMove)
+            } else if let event = state.gameInfo?.event {
+                Text(event)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1)
+            }
+        }
+    }
+
+    /// The engine is still working: say so plainly and say how far it has got.
+    ///
+    /// The chart filling in underneath is the real feedback; this line only exists so
+    /// a board without a marker reads as "not yet" rather than as "nothing to say".
+    private func gauge(done: Int, total: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini)
+                Text("Analyse \(done) / \(total)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondaryText)
+                    .monospacedDigit()
+                Spacer(minLength: 0)
+            }
+            ProgressView(value: Double(done), total: Double(max(total, 1)))
+                .progressViewStyle(.linear)
+        }
+    }
+
+    /// The two names, on their own lines rather than in the table.
+    ///
+    /// PlayerTable is built around right-aligned tabular figures; a name dropped into
+    /// a number column reads as a mistake. Absent entirely when the record names
+    /// neither player, which many do not.
+    @ViewBuilder private var players: some View {
+        let info = state.gameInfo
+        if info?.label(for: .black) != nil || info?.label(for: .white) != nil {
+            VStack(alignment: .leading, spacing: 5) {
+                name(.black, label: info?.label(for: .black))
+                name(.white, label: info?.label(for: .white))
+            }
+        }
+    }
+
+    private func name(_ color: PlayerColor, label: String?) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(Theme.stone(color))
+                .strokeBorder(Theme.primaryText.opacity(color == .black ? 0.25 : 0), lineWidth: 0.5)
+                .frame(width: 10, height: 10)
+            Text(label ?? "Joueur inconnu")
+                .font(.system(size: 12))
+                .foregroundStyle(label == nil ? Theme.secondaryText : Theme.primaryText.opacity(0.85))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(Theme.name(color)) : \(label ?? "inconnu")")
+    }
+
+    private var rows: [PlayerTable.Row] {
+        [
+            PlayerTable.Row(
+                "Captures",
+                black: state.captures.byBlack,
+                white: state.captures.byWhite
+            )
+        ]
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Theme.bestMove)
+                    .frame(width: 9, height: 9)
+                Text("Meilleur coup selon KataGo")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondaryText)
+            }
+            Button {
+                NotificationCenter.default.post(name: .moyoNewGameRequested, object: nil)
+            } label: {
+                Label("Nouvelle partie", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.large)
         }
     }
 }

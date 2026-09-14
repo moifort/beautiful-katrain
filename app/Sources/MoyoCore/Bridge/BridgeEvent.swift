@@ -79,6 +79,50 @@ public enum GameStatus: String, Codable, Sendable {
     /// Both players have passed; the dead stones are being agreed on.
     case scoring
     case finished
+    /// A record is being read rather than played: nothing on the board can be moved.
+    case review
+}
+
+/// KataGo's first choice at the position on screen.
+///
+/// `pointsLost` is what the move actually played gives away against it. Nothing
+/// displays it yet — the board shows a single mark and no figure — but it travels
+/// with the point because it costs nothing and is the whole of a teaching mode.
+public struct BestMove: Codable, Sendable, Hashable {
+    public let row: Int
+    public let col: Int
+    public let pointsLost: Double
+
+    public init(row: Int, col: Int, pointsLost: Double) {
+        self.row = row
+        self.col = col
+        self.pointsLost = pointsLost
+    }
+
+    public var point: Point { Point(row: row, col: col) }
+}
+
+/// What the record says about the game it holds. Every field may be absent.
+public struct GameInfo: Codable, Sendable, Hashable {
+    public let blackName: String?
+    public let whiteName: String?
+    public let blackRank: String?
+    public let whiteRank: String?
+    public let result: String?
+    public let date: String?
+    public let event: String?
+
+    /// A player's name and rank on one line, or nil when the record says neither.
+    public func label(for color: PlayerColor) -> String? {
+        let name = color == .black ? blackName : whiteName
+        let rank = color == .black ? blackRank : whiteRank
+        switch (name, rank) {
+        case (let name?, let rank?): return "\(name) \(rank)"
+        case (let name?, nil): return name
+        case (nil, let rank?): return rank
+        case (nil, nil): return nil
+        }
+    }
 }
 
 public struct TerritoryPoint: Codable, Sendable, Hashable {
@@ -147,9 +191,23 @@ public struct GameState: Codable, Sendable {
     public let aiStrategy: String?
     public let aiSettings: [String: SettingValue]?
 
+    // -- review only; all nil while a game is being played
+
+    /// Moves in the record's main line. `moveNumber` is a position within it.
+    public let moveCount: Int?
+    public let gameInfo: GameInfo?
+    /// How far down KataGo's own continuation we have walked, 0 on the record itself.
+    public let variationDepth: Int?
+    /// nil until the analysis for this position comes back.
+    public let bestMove: BestMove?
+
+    public var isReviewing: Bool { status == .review }
+
     public var isHumanTurn: Bool { status == .playing && toPlay == humanColor }
 
     /// Points the player can act on: play a stone, or mark a group dead.
+    ///
+    /// A record under review accepts none: it is read, not played on.
     public var acceptsClicks: Bool { status == .playing || status == .scoring }
 }
 
@@ -158,6 +216,8 @@ public enum BridgeEvent: Sendable {
     case state(id: Int?, GameState)
     case thinking(Bool)
     case score(moveNumber: Int, scoreLead: Double)
+    /// How much of a record under review KataGo has finished chewing through.
+    case analysisProgress(done: Int, total: Int)
     case failure(id: Int?, code: String, message: String)
     case engineFailed(message: String)
 
@@ -169,7 +229,7 @@ public enum BridgeEvent: Sendable {
 extension BridgeEvent: Decodable {
     private enum Keys: String, CodingKey {
         case event, id, katago, model, value, moveNumber, scoreLead, code, message
-        case strategies, aiSettings
+        case strategies, aiSettings, done, total
     }
 
     public init(from decoder: any Decoder) throws {
@@ -195,6 +255,11 @@ extension BridgeEvent: Decodable {
             self = .score(
                 moveNumber: try container.decode(Int.self, forKey: .moveNumber),
                 scoreLead: try container.decode(Double.self, forKey: .scoreLead)
+            )
+        case "analysis_progress":
+            self = .analysisProgress(
+                done: try container.decode(Int.self, forKey: .done),
+                total: try container.decode(Int.self, forKey: .total)
             )
         case "error":
             self = .failure(

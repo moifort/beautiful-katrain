@@ -43,10 +43,21 @@ public struct BoardView: View {
                 }
                 .accessibilityElement()
                 .accessibilityLabel("Goban \(state.size) sur \(state.size)")
-                .accessibilityValue("\(state.stones.count) pierres, coup \(state.moveNumber)")
+                .accessibilityValue(accessibilityValue)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
+    }
+
+    private var accessibilityValue: String {
+        var description = "\(state.stones.count) pierres, coup \(state.moveNumber)"
+        if let count = state.moveCount {
+            description += " sur \(count)"
+        }
+        if state.bestMove != nil {
+            description += ", meilleur coup proposé"
+        }
+        return description
     }
 
     private func draw(in context: inout GraphicsContext, geometry: BoardGeometry) {
@@ -58,6 +69,35 @@ public struct BoardView: View {
         } else {
             drawLastMove(in: &context, geometry: geometry)
         }
+        if let best = state.bestMove {
+            drawBestMove(in: &context, geometry: geometry, at: best.point)
+        }
+    }
+
+    /// KataGo's first choice, drawn last so nothing sits on top of it.
+    ///
+    /// A full disc rather than a ring: the point is to see a move, not a mark. The
+    /// bridge only ever sends an empty intersection, so it can never cover a stone.
+    private func drawBestMove(
+        in context: inout GraphicsContext,
+        geometry: BoardGeometry,
+        at point: Point
+    ) {
+        let center = geometry.position(of: point)
+        let radius = geometry.stoneRadius
+        let rect = CGRect(
+            x: center.x - radius, y: center.y - radius,
+            width: radius * 2, height: radius * 2
+        )
+        let path = Path(ellipseIn: rect)
+        context.fill(path, with: .color(Theme.bestMove.opacity(0.92)))
+        // The wood and the green are close in value; a darker edge keeps the disc
+        // from melting into the board at small sizes.
+        context.stroke(
+            path,
+            with: .color(Theme.gridLine.opacity(0.4)),
+            lineWidth: max(0.6, radius * 0.06)
+        )
     }
 
     /// Territory as small squares on the empty points, in the colour that owns them.

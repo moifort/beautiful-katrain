@@ -66,6 +66,23 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <key>LSApplicationCategoryType</key><string>public.app-category.board-games</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
+    <!-- macOS ne déclare aucun type pour un enregistrement de go : Moyo importe
+         le sien, puis se déclare capable de le lire. -->
+    <key>UTImportedTypeDeclarations</key>
+    <array><dict>
+        <key>UTTypeIdentifier</key><string>org.smart-game-format.sgf</string>
+        <key>UTTypeDescription</key><string>Partie de go (SGF)</string>
+        <key>UTTypeConformsTo</key><array><string>public.plain-text</string></array>
+        <key>UTTypeTagSpecification</key>
+        <dict><key>public.filename-extension</key><array><string>sgf</string></array></dict>
+    </dict></array>
+    <key>CFBundleDocumentTypes</key>
+    <array><dict>
+        <key>CFBundleTypeName</key><string>Partie de go (SGF)</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>org.smart-game-format.sgf</string></array>
+    </dict></array>
 </dict>
 </plist>
 PLIST
@@ -77,6 +94,9 @@ cat > "$WORK/app.entitlements" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>com.apple.security.app-sandbox</key><true/>
+  <!-- Ouvrir un SGF. L'accès vaut pour la fenêtre, pas pour le pont : c'est
+       l'application qui lit le fichier et en envoie le texte. -->
+  <key>com.apple.security.files.user-selected.read-only</key><true/>
 </dict></plist>
 PLIST
 # Un processus enfant qui porte la moindre entitlement en plus de ces deux-là est

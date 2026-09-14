@@ -103,6 +103,13 @@ public final class GameSession {
     /// Score lead per move number, filled in as analyses come back.
     public private(set) var scoreByMove: [Int: Double] = [:]
 
+    /// How far KataGo has got through a record under review, nil when it is done
+    /// or when no record is open.
+    public private(set) var analysisProgress: (done: Int, total: Int)?
+
+    /// The record's file name, for the window title.
+    public private(set) var recordName: String?
+
     private let bridge: BridgeProcess
     private let store: SettingsStore
     private var nextCommandID = 1
@@ -173,9 +180,15 @@ public final class GameSession {
         case .score(let moveNumber, let scoreLead):
             scoreByMove[moveNumber] = scoreLead
 
+        case .analysisProgress(let done, let total):
+            analysisProgress = done >= total ? nil : (done, total)
+
         case .failure(_, let code, let message):
-            // An illegal move needs no announcement: the stone simply does not land.
-            if code != "illegal_move" {
+            // Some refusals are answers, not faults, and a keystroke that arrives a
+            // moment too early should not raise a dialog: an illegal move simply
+            // does not land, and a variation asked for before its analysis has come
+            // back simply does not move.
+            if !Self.silentFailures.contains(code) {
                 lastErrorMessage = message
             }
 
@@ -187,9 +200,16 @@ public final class GameSession {
         }
     }
 
+    /// Refusals the board answers on its own, without a word.
+    private static let silentFailures: Set<String> = ["illegal_move", "no_variation"]
+
     private func apply(_ newState: GameState) {
-        // Moves beyond the current one no longer exist, typically after an undo.
-        scoreByMove = scoreByMove.filter { $0.key <= newState.moveNumber }
+        // Moves beyond the current one no longer exist, typically after an undo —
+        // but a record under review has a future as well as a past, and stepping
+        // back through it must not rub out the part of the chart that lies ahead.
+        if !newState.isReviewing {
+            scoreByMove = scoreByMove.filter { $0.key <= newState.moveNumber }
+        }
         for (index, score) in newState.scoreHistory.enumerated() {
             if let score { scoreByMove[index] = score }
         }
@@ -209,6 +229,8 @@ public final class GameSession {
         scoreByMove.removeAll()
         state = nil
         lastErrorMessage = nil
+        recordName = nil
+        analysisProgress = nil
         bridge.send(
             .newGame(
                 id: nextID(),
@@ -267,6 +289,65 @@ public final class GameSession {
         bridge.send(.resign(id: nextID()))
     }
 
+    /// Dismisses the last failure, once the player has seen it.
+    public func clearError() {
+        lastErrorMessage = nil
+    }
+
+    // -- review --------------------------------------------------------------
+
+    /// True once a record is open and being read.
+    public var isReviewing: Bool { state?.isReviewing ?? false }
+
+    /// Opens a record, replacing whatever the window was showing.
+    ///
+    /// The file is read here and sent as text: the bridge opens nothing, which keeps
+    /// the sandbox out of the child process and the encoding guess in AppKit's hands.
+    public func openRecord(at url: URL) {
+        do {
+            let record = try SGFImport.read(url)
+            scoreByMove.removeAll()
+            analysisProgress = nil
+            lastErrorMessage = nil
+            recordName = record.name
+            thinking.ended()
+            bridge.send(.loadSGF(id: nextID(), name: record.name, contents: record.contents))
+        } catch {
+            recordName = nil
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    /// Moves to a position in the record. The bridge clamps anything out of range.
+    public func goto(moveNumber: Int) {
+        guard isReviewing else { return }
+        bridge.send(.goto(id: nextID(), moveNumber: moveNumber))
+    }
+
+    /// One move back or forward along the record.
+    public func step(_ delta: Int) {
+        guard let state, state.isReviewing else { return }
+        // Inside a variation, a plain arrow leaves it first: the bridge prunes the
+        // branch and lands on the record's own position.
+        goto(moveNumber: state.moveNumber + delta)
+    }
+
+    /// One move of KataGo's own continuation, added or taken back.
+    public func stepVariation(_ delta: Int) {
+        guard isReviewing else { return }
+        bridge.send(.variation(id: nextID(), step: delta > 0 ? 1 : -1))
+    }
+
+    public var canStepBackward: Bool {
+        guard let state, state.isReviewing else { return false }
+        return state.moveNumber > 0 || (state.variationDepth ?? 0) > 0
+    }
+
+    public var canStepForward: Bool {
+        guard let state, state.isReviewing, let count = state.moveCount else { return false }
+        return state.moveNumber < count
+    }
+
     /// Scores flipped to the human player's side: positive means they are ahead.
     ///
     /// The bridge reports the lead from Black's point of view, which would make the
@@ -297,6 +378,8 @@ public final class GameSession {
     }
 
     /// True when the player may act: a game is running and it is their turn.
+    ///
+    /// `isHumanTurn` is already false under review, so nothing extra is needed here.
     public var canAct: Bool {
         phase == .running && (state?.isHumanTurn ?? false)
     }

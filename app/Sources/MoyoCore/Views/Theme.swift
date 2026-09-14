@@ -36,6 +36,10 @@ public enum Theme {
     /// A dimmed white stone on light wood needs a contour to keep its edge.
     public static let deadStoneContour = gridLine.opacity(0.35)
 
+    /// KataGo's first choice, in KaTrain's own green. A filled disc the size of a
+    /// stone, so it reads as "play here" rather than as an annotation.
+    public static let bestMove = Color(red: 0.247, green: 0.725, blue: 0.314)
+
     /// Marks the last move by contrast with the stone it sits on, rather than with a
     /// colour of its own.
     public static func lastMoveMarker(on stone: PlayerColor) -> Color {

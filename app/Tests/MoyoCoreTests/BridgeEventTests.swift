@@ -152,4 +152,60 @@ struct BridgeEventTests {
         #expect(object["col"] as? Int == 15)
         #expect(object["size"] == nil)
     }
+
+    @Test("Un état de revue porte le record, son meilleur coup et sa longueur")
+    func reviewState() throws {
+        let line = """
+            {"event":"state","id":7,"size":19,"stones":[],"to_play":"B","move_number":4,\
+            "last_move":null,"captures":{"by_black":0,"by_white":0},"score_history":[null],\
+            "score_lead":null,"human_color":"B","status":"review","result":"B+2",\
+            "move_count":211,"variation_depth":2,"best_move":{"row":15,"col":3,"points_lost":4.25},\
+            "game_info":{"black_name":"Shusaku","white_name":null,"black_rank":"4d",\
+            "white_rank":null,"result":"B+2","date":null,"event":"Ear-reddening"}}
+            """
+        guard case .state(_, let state) = try BridgeEvent.decode(line: line) else {
+            Issue.record("attendu un événement state")
+            return
+        }
+        #expect(state.status == .review)
+        #expect(state.isReviewing)
+        #expect(state.moveCount == 211)
+        #expect(state.variationDepth == 2)
+        #expect(state.bestMove == BestMove(row: 15, col: 3, pointsLost: 4.25))
+        #expect(state.gameInfo?.label(for: .black) == "Shusaku 4d")
+        #expect(state.gameInfo?.label(for: .white) == nil)
+        #expect(state.gameInfo?.event == "Ear-reddening")
+        // Un record se lit, il ne se joue pas.
+        #expect(!state.acceptsClicks)
+        #expect(!state.isHumanTurn)
+    }
+
+    @Test("Une partie en cours ne porte aucun champ de revue")
+    func playingStateHasNoReviewFields() throws {
+        let line = """
+            {"event":"state","id":1,"size":9,"stones":[],"to_play":"B","move_number":0,\
+            "last_move":null,"captures":{"by_black":0,"by_white":0},"score_history":[],\
+            "score_lead":null,"human_color":"B","status":"playing","result":null}
+            """
+        guard case .state(_, let state) = try BridgeEvent.decode(line: line) else {
+            Issue.record("attendu un événement state")
+            return
+        }
+        #expect(!state.isReviewing)
+        #expect(state.moveCount == nil)
+        #expect(state.bestMove == nil)
+        #expect(state.gameInfo == nil)
+        #expect(state.variationDepth == nil)
+    }
+
+    @Test("La progression de l'analyse")
+    func analysisProgress() throws {
+        let line = #"{"event":"analysis_progress","id":null,"done":34,"total":211}"#
+        guard case .analysisProgress(let done, let total) = try BridgeEvent.decode(line: line) else {
+            Issue.record("attendu un événement analysis_progress")
+            return
+        }
+        #expect(done == 34)
+        #expect(total == 211)
+    }
 }

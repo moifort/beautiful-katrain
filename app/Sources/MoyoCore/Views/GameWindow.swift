@@ -1,9 +1,12 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct GameWindow: View {
     @Bindable public var session: GameSession
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var isShowingNewGame = false
+    @State private var isTargetedByDrop = false
 
     public init(session: GameSession) {
         self.session = session
@@ -30,6 +33,38 @@ public struct GameWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: .moyoNewGameRequested)) { _ in
             isShowingNewGame = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .moyoOpenRecordRequested)) { _ in
+            presentOpenPanel()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .moyoRecordDropped)) { note in
+            if let url = note.object as? URL { session.openRecord(at: url) }
+        }
+        // `lastErrorMessage` was already being set and shown nowhere. A record that
+        // will not open has to say so, or the window simply ignores the file.
+        .alert(
+            "Cette partie n'a pas pu être ouverte",
+            isPresented: Binding(
+                get: { session.lastErrorMessage != nil },
+                set: { if !$0 { session.clearError() } }
+            )
+        ) {
+            Button("Fermer", role: .cancel) { session.clearError() }
+        } message: {
+            Text(session.lastErrorMessage ?? "")
+        }
+    }
+
+    /// The open panel is what grants a sandboxed app access to the file. The record
+    /// is read straight away, while that grant is live.
+    private func presentOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = [UTType.moyoSGF]
+        panel.prompt = "Ouvrir"
+        panel.message = "Choisissez une partie au format SGF."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        session.openRecord(at: url)
     }
 
     private var board: some View {
@@ -48,19 +83,41 @@ public struct GameWindow: View {
                 ProgressView().controlSize(.small)
             }
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            guard let url = urls.first(where: { $0.pathExtension.lowercased() == SGFImport.fileExtension })
+            else { return false }
+            session.openRecord(at: url)
+            return true
+        } isTargeted: { isTargetedByDrop = $0 }
+        .overlay {
+            if isTargetedByDrop {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.bestMove.opacity(0.8), lineWidth: 2)
+                    .padding(10)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
-    /// While counting, clicks mark groups rather than play stones.
+    /// While counting, clicks mark groups rather than play stones. A record under
+    /// review takes none: `canAct` is already false there, and there is nothing to
+    /// count, so both branches land on nothing.
     private func isBoardInteractive(_ state: GameState) -> Bool {
         state.status == .scoring ? true : session.canAct
     }
 
     private var title: String {
-        session.state?.status == .finished ? "Partie terminée" : "Partie contre KataGo"
+        if session.isReviewing { return session.recordName ?? "Partie" }
+        return session.state?.status == .finished ? "Partie terminée" : "Partie contre KataGo"
     }
 
     private var subtitle: String {
         guard let state = session.state else { return "" }
+        if state.isReviewing {
+            let size = "\(state.size)×\(state.size)"
+            guard let result = state.gameInfo?.result else { return size }
+            return "\(size) · \(result)"
+        }
         if state.status == .finished { return state.result ?? "" }
         return "\(state.size)×\(state.size)"
     }
@@ -86,4 +143,16 @@ public struct GameWindow: View {
         // breathe against its rounded edge.
         .padding(.leading, 6)
     }
+}
+
+extension UTType {
+    /// macOS declares no type for a go record, so the app imports one of its own.
+    ///
+    /// Resolved rather than declared: `UTType(importedAs:)` traps outright when the
+    /// type is not in the Info.plist, which is exactly the case for a `swift run`
+    /// build. Each fallback is a wider net than the last, and the last always exists.
+    static let moyoSGF: UTType =
+        UTType("org.smart-game-format.sgf")
+        ?? UTType(filenameExtension: SGFImport.fileExtension)
+        ?? .plainText
 }

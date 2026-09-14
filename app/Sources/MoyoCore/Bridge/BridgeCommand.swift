@@ -13,6 +13,11 @@ public struct BridgeCommand: Encodable, Sendable {
     var aiSettings: [String: Double]?
     var row: Int?
     var col: Int?
+    /// The record's file name, for the window title. The bridge never opens it.
+    var name: String?
+    var contents: String?
+    var moveNumber: Int?
+    var step: Int?
 
     public static func newGame(
         id: Int,
@@ -36,6 +41,25 @@ public struct BridgeCommand: Encodable, Sendable {
     /// Switches the AI mode in the middle of a game.
     public static func setAI(id: Int, strategy: String, settings: [String: Double]) -> BridgeCommand {
         BridgeCommand(id: id, cmd: "set_ai", aiStrategy: strategy, aiSettings: settings)
+    }
+
+    /// Hands a record over as text, not as a path.
+    ///
+    /// The sandbox grants the window access to the file the player chose, not the
+    /// child process; and `shims/chardet` is deliberately too modest to guess an
+    /// encoding. Decoding happens here, where AppKit does it well.
+    public static func loadSGF(id: Int, name: String, contents: String) -> BridgeCommand {
+        BridgeCommand(id: id, cmd: "load_sgf", name: name, contents: contents)
+    }
+
+    /// Jumps to a position in the record. The bridge clamps anything out of range.
+    public static func goto(id: Int, moveNumber: Int) -> BridgeCommand {
+        BridgeCommand(id: id, cmd: "goto", moveNumber: moveNumber)
+    }
+
+    /// Walks KataGo's own continuation: +1 adds a move, -1 takes one back.
+    public static func variation(id: Int, step: Int) -> BridgeCommand {
+        BridgeCommand(id: id, cmd: "variation", step: step)
     }
 
     public static func toggleDead(id: Int, row: Int, col: Int) -> BridgeCommand {
