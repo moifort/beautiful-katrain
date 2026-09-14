@@ -15,13 +15,36 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
   and friends). The App Store listing is worldwide, so the strings should move to a
   String Catalog with English alongside French.
 
-- **SGF import and export.** No way in or out of a game record today.
+- **SGF export.** Records come in, nothing goes out. A game played against the AI
+  cannot be saved, and a variation walked during a review cannot be kept. Import
+  landed first because reading someone else's game is the use we had; writing one
+  back out needs decisions about where files go under the sandbox.
 
-- **Analysis mode.** Review a finished game move by move with KataGo's evaluation.
+- **Variations in an imported record.** A review follows `children[0]` throughout and
+  ignores every branch the file carries. Records from a server have none; records
+  from a teaching session are mostly branches. Showing them means a tree in the
+  sidebar, which is a screen of its own.
+
+- **SGF comments.** `C[]` is parsed by pysgf and dropped on the floor. A review that
+  showed the commentary would be worth more than one that only shows the engine.
+
+- **`CA[]` is ignored on import.** The app decodes the file with the system's own
+  encoding detection and sends text to the bridge, so the record's declared charset
+  never gets a say. It can only disagree about names and comments — moves are ASCII
+  — and honouring it would mean parsing bytes in the bridge and a real charset
+  library in place of `shims/chardet`.
+
+- **Teaching mode.** KaTrain's per-move feedback on mistakes and better options. The
+  bridge already sends `points_lost` with the best move and nothing displays it.
 
 - **Teaching mode.** KaTrain's per-move feedback on mistakes and better options.
 
 ## Design
+
+- **A record under review is read-only.** Clicking the board does nothing, not even
+  on the green marker. Playing the marked move with a click would be the obvious
+  gesture, but it collides with the arrow keys owning navigation, and it wants a
+  decision about what happens to the branch afterwards.
 
 - **Revisit the icon at 16 px.** Generated with Gemini 3 Pro Image, then masked to
   the macOS squircle by `app/Scripts/make-icon.py`. The wood grain and the grid

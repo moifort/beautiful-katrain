@@ -11,6 +11,8 @@ Native macOS interface for [KaTrain](https://github.com/sanderland/katrain), in 
 - Live score graph, read from the player's side
 - End of game: two passes, dead stones proposed from KataGo's ownership then adjustable by
   click, Japanese or Chinese scoring
+- Read a game record: open an SGF, walk it with the arrow keys, and see KataGo's own
+  choice at each position. Option and the arrows walk the engine's continuation
 - Collapsible sidebar, native menus and shortcuts, Liquid Glass
 
 ## How it works
@@ -66,7 +68,9 @@ swift test --package-path app
 
 ## Limits
 
-Apple Silicon only. No SGF, no analysis mode, no teaching mode — see `TODO.md`.
+Apple Silicon only. Records can be read but not written, a review follows the main
+line and ignores the record's branches and comments, and there is no teaching mode —
+see `TODO.md`.
 
 Territory scoring is the one go rule implemented here — KaTrain derives its final score from
 KataGo's ownership and has no notion of a stone marked dead.
