@@ -129,15 +129,23 @@ class KaTrainHost(KaTrainBase):
             fn, args = self._tasks.get()
             if fn is None:
                 return
-            try:
-                fn(*args)
-            except CommandError as exc:
-                # Every command method takes its command id first, so the error can
-                # be attributed to the command that caused it.
-                self._writer.emit("error", args[0] if args else None, code=exc.code, message=exc.message)
-            except Exception as exc:  # keep the bridge alive; the app sees the error
-                self._writer.emit("error", None, code="internal", message=f"{type(exc).__name__}: {exc}")
-                self._log_stderr(f"worker error: {type(exc).__name__}: {exc}")
+            self.run_task(fn, *args)
+
+    def run_task(self, fn, *args) -> None:
+        """Runs one command and turns anything it raises into an error event.
+
+        Kept apart from the loop so the policy — which failures reach the app, and
+        under which id — can be exercised without starting a thread.
+        """
+        try:
+            fn(*args)
+        except CommandError as exc:
+            # Every command method takes its command id first, so the error can
+            # be attributed to the command that caused it.
+            self._writer.emit("error", args[0] if args else None, code=exc.code, message=exc.message)
+        except Exception as exc:  # keep the bridge alive; the app sees the error
+            self._writer.emit("error", None, code="internal", message=f"{type(exc).__name__}: {exc}")
+            self._log_stderr(f"worker error: {type(exc).__name__}: {exc}")
 
     def stop(self) -> None:
         self._stopping = True

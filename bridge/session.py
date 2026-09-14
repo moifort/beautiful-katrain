@@ -399,12 +399,37 @@ class BridgeSession(KaTrainHost):
         else:
             self._pop_variation(command_id)
 
+    def _refresh_anchor_pv(self) -> None:
+        """Takes a longer continuation from the anchor once the analysis has deepened.
+
+        The first press often lands on a reading built from the policy alone, whose
+        continuation is a single move. Freezing that would stop the walk at the
+        shallowest view KataGo ever had of the position. A fresher line is adopted
+        only when it still begins with the moves already on the board, so the branch
+        under the player's eyes is extended and never rewritten.
+        """
+        fresh = review.variation(self._line[self._index])
+        walked = len(self._variation)
+        if len(fresh) <= len(self._anchor_pv):
+            return
+        if fresh[:walked] != self._anchor_pv[:walked]:
+            return
+        self._anchor_pv = fresh
+
     def _push_variation(self, command_id) -> None:
+        anchor = self._line[self._index]
         if not self._variation:
-            self._anchor_pv = review.variation(self._line[self._index])
+            self._anchor_pv = review.variation(anchor)
+        else:
+            self._refresh_anchor_pv()
         depth = len(self._variation)
         if depth >= len(self._anchor_pv):
-            raise CommandError("no_variation", "KataGo ne propose pas de suite à cette position")
+            # Worth telling apart: one is a wait, the other is the end of the line.
+            if not anchor.analysis_complete:
+                raise CommandError(
+                    "no_variation", "l'analyse de cette position n'est pas encore revenue"
+                )
+            raise CommandError("no_variation", "KataGo ne propose rien au-delà de ce point")
         node = self.game.current_node
         move = Move.from_gtp(self._anchor_pv[depth], player=node.next_player)
         if move.is_pass:
