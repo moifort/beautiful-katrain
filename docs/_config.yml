@@ -1,0 +1,8 @@
+# Le site n'est qu'une page : la politique de confidentialité exigée par l'App
+# Store. Les specs de conception vivent sous docs/ mais n'ont rien à faire dans
+# un site publié.
+title: Moyo
+description: Play Go against KataGo on your Mac.
+exclude:
+  - superpowers/
+  - images/
