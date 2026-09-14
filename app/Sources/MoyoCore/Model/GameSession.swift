@@ -127,7 +127,8 @@ public final class GameSession {
             let events = try bridge.start(
                 python: location.python,
                 script: location.script,
-                logDirectory: location.logDirectory
+                logDirectory: location.logDirectory,
+                environment: location.environment
             )
             eventTask = Task { [weak self] in
                 for await event in events {

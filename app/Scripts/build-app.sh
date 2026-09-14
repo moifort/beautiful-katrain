@@ -1,26 +1,55 @@
 #!/bin/bash
-# Builds Moyo.app.
+# Assemble Moyo.app, autonome et relocalisable.
 #
-# The milestone runs the bridge from the project's virtual environment rather than
-# embedding a Python interpreter, so the project root is baked into Info.plist and
-# the app is not relocatable. Bundling the interpreter is a later milestone.
+# Le bundle ne dépend de rien d'installé sur la machine : interpréteur Python,
+# katago, modèles et configuration vivent tous à l'intérieur. C'est la condition
+# du sandbox App Store, qui interdit d'aller chercher quoi que ce soit dehors.
+#
+# Prérequis : ./app/Scripts/build-katago.sh une fois, et vendor/python (voir README).
 set -euo pipefail
 
-APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROJECT_ROOT="$(cd "$APP_DIR/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+APP_DIR="$ROOT/app"
 CONFIGURATION="${1:-release}"
 BUNDLE="$APP_DIR/build/Moyo.app"
+CONTENTS="$BUNDLE/Contents"
+KATAGO="${MOYO_KATAGO_BINARY:-$ROOT/vendor/katago-src/cpp/build/katago}"
+PAYLOAD="$APP_DIR/build/payload"
 
-echo "==> Building ($CONFIGURATION)"
+# Les modèles pèsent 190 Mo et ne peuvent pas vivre dans le dépôt. En local on
+# reprend ceux déjà installés ; la CI les récupérera et posera ces variables.
+PLAY_MODEL="${MOYO_PLAY_MODEL:-/opt/homebrew/opt/katago/share/katago/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz}"
+HUMAN_MODEL="${MOYO_HUMAN_MODEL_FILE:-$HOME/.katrain/b18c384nbt-humanv0.bin.gz}"
+ENGINE_CONFIG="${MOYO_ENGINE_CONFIG:-$ROOT/.venv/lib/python3.13/site-packages/katrain/KataGo/analysis_config.cfg}"
+
+VERSION="${MOYO_VERSION:-0.1.0}"
+BUILD_NUMBER="${MOYO_BUILD_NUMBER:-1}"
+IDENTITY="${MOYO_SIGN_IDENTITY:--}"   # « - » : signature ad-hoc, suffisante en local
+
+for path in "$KATAGO" "$PLAY_MODEL" "$HUMAN_MODEL" "$ENGINE_CONFIG"; do
+  [ -e "$path" ] || { echo "manque : $path" >&2; exit 1; }
+done
+
+echo "==> Compilation Swift ($CONFIGURATION)"
 swift build --package-path "$APP_DIR" -c "$CONFIGURATION"
 BINARY="$(swift build --package-path "$APP_DIR" -c "$CONFIGURATION" --show-bin-path)/Moyo"
 
-echo "==> Assembling bundle"
-rm -rf "$BUNDLE"
-mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
-cp "$BINARY" "$BUNDLE/Contents/MacOS/Moyo"
+echo "==> Chargement Python"
+"$APP_DIR/Scripts/build-python-payload.sh" "$PAYLOAD" >/dev/null
 
-cat > "$BUNDLE/Contents/Info.plist" <<PLIST
+echo "==> Assemblage"
+rm -rf "$BUNDLE"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Helpers" "$CONTENTS/Resources/models"
+cp "$BINARY" "$CONTENTS/MacOS/Moyo"
+cp "$KATAGO" "$CONTENTS/Helpers/katago"
+cp -R "$PAYLOAD/python" "$CONTENTS/Resources/python"
+cp -R "$PAYLOAD/bridge" "$CONTENTS/Resources/bridge"
+cp "$ENGINE_CONFIG" "$CONTENTS/Resources/analysis_config.cfg"
+cp "$PLAY_MODEL" "$CONTENTS/Resources/models/play.bin.gz"
+cp "$HUMAN_MODEL" "$CONTENTS/Resources/models/human.bin.gz"
+[ -f "$APP_DIR/build/Moyo.icns" ] && cp "$APP_DIR/build/Moyo.icns" "$CONTENTS/Resources/Moyo.icns"
+
+cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -29,18 +58,53 @@ cat > "$BUNDLE/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>com.thibaut.moyo</string>
     <key>CFBundleName</key><string>Moyo</string>
     <key>CFBundleDisplayName</key><string>Moyo</string>
+    <key>CFBundleIconFile</key><string>Moyo</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>$VERSION</string>
+    <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
+    <key>LSApplicationCategoryType</key><string>public.app-category.board-games</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>MoyoProjectRoot</key><string>$PROJECT_ROOT</string>
 </dict>
 </plist>
 PLIST
 
-# Ad-hoc signature: enough for local launching, not for distribution.
-codesign --force --sign - "$BUNDLE" >/dev/null 2>&1 || echo "    (signature ad-hoc ignorée)"
+WORK="$APP_DIR/build/signing"
+mkdir -p "$WORK"
+cat > "$WORK/app.entitlements" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.security.app-sandbox</key><true/>
+</dict></plist>
+PLIST
+# Un processus enfant qui porte la moindre entitlement en plus de ces deux-là est
+# tué au démarrage par le système. Ne rien ajouter ici.
+cat > "$WORK/helper.entitlements" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.security.app-sandbox</key><true/>
+  <key>com.apple.security.inherit</key><true/>
+</dict></plist>
+PLIST
 
-echo "==> $BUNDLE"
+echo "==> Signature, de l'intérieur vers l'extérieur"
+# Toute signature extérieure invalide les intérieures : l'ordre n'est pas négociable.
+sign() { codesign --force --timestamp --options runtime --sign "$IDENTITY" "$@" ; }
+[ "$IDENTITY" = "-" ] && sign() { codesign --force --sign - "$@" ; }
+
+find "$CONTENTS/Resources/python" \( -name "*.so" -o -name "*.dylib" \) -print0 |
+  while IFS= read -r -d '' lib; do sign "$lib" 2>/dev/null || true; done
+
+# python-build-standalone ne porte pas d'Info.plist : sans --identifier, le système
+# ne lui trouve pas d'identifiant de bundle et refuse de l'exécuter sous sandbox.
+sign --identifier com.thibaut.moyo.python \
+     --entitlements "$WORK/helper.entitlements" "$CONTENTS/Resources/python/bin/python3.13"
+sign --identifier com.thibaut.moyo.katago \
+     --entitlements "$WORK/helper.entitlements" "$CONTENTS/Helpers/katago"
+sign --entitlements "$WORK/app.entitlements" "$BUNDLE"
+
+codesign --verify --deep --strict "$BUNDLE"
+echo "==> $BUNDLE ($(du -sm "$BUNDLE" | cut -f1) Mo, signé « $IDENTITY »)"

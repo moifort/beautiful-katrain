@@ -37,7 +37,12 @@ public final class BridgeProcess: @unchecked Sendable {
 
     public var isRunning: Bool { process.isRunning }
 
-    public func start(python: URL, script: URL, logDirectory: URL) throws -> AsyncStream<BridgeEvent> {
+    public func start(
+        python: URL,
+        script: URL,
+        logDirectory: URL,
+        environment: [String: String] = [:]
+    ) throws -> AsyncStream<BridgeEvent> {
         guard FileManager.default.isExecutableFile(atPath: python.path) else {
             throw BridgeStartupError.pythonMissing(python)
         }
@@ -47,6 +52,11 @@ public final class BridgeProcess: @unchecked Sendable {
 
         process.executableURL = python
         process.arguments = [script.path]
+        // Le bundle désigne ici son binaire katago, ses modèles et sa configuration.
+        // Vide en développement, où le pont lit ~/.katrain comme avant.
+        if !environment.isEmpty {
+            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
+        }
         process.currentDirectoryURL = script.deletingLastPathComponent()
         process.standardInput = inPipe
         process.standardOutput = outPipe
