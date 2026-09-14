@@ -1,6 +1,6 @@
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Affichage du score en attendant l'analyse")
 struct ScoreReadoutTests {

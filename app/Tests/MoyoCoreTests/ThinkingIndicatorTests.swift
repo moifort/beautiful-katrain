@@ -1,6 +1,6 @@
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Temporisation de l'indicateur de réflexion")
 @MainActor

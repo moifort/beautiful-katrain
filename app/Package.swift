@@ -2,21 +2,21 @@
 import PackageDescription
 
 let package = Package(
-    name: "BeautifulKaTrain",
+    name: "Moyo",
     platforms: [.macOS("26.0")],
     targets: [
         // The bulk of the app lives in a library so the tests can import it; the
         // executable is only the @main entry point.
-        .target(name: "BeautifulKaTrainCore", path: "Sources/BeautifulKaTrainCore"),
+        .target(name: "MoyoCore", path: "Sources/MoyoCore"),
         .executableTarget(
-            name: "BeautifulKaTrain",
-            dependencies: ["BeautifulKaTrainCore"],
-            path: "Sources/BeautifulKaTrain"
+            name: "Moyo",
+            dependencies: ["MoyoCore"],
+            path: "Sources/Moyo"
         ),
         .testTarget(
-            name: "BeautifulKaTrainCoreTests",
-            dependencies: ["BeautifulKaTrainCore"],
-            path: "Tests/BeautifulKaTrainCoreTests"
+            name: "MoyoCoreTests",
+            dependencies: ["MoyoCore"],
+            path: "Tests/MoyoCoreTests"
         ),
     ]
 )

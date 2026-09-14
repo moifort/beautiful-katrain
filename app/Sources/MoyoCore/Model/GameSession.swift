@@ -119,7 +119,7 @@ public final class GameSession {
     public func start() {
         guard let location = BridgeLocation.resolve() else {
             phase = .failed(
-                "Emplacement du projet inconnu. Définissez BEAUTIFUL_KATRAIN_ROOT ou reconstruisez l'application."
+                "Emplacement du projet inconnu. Définissez MOYO_DEV_ROOT ou reconstruisez l'application."
             )
             return
         }

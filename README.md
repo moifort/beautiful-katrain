@@ -1,8 +1,8 @@
-# Beautiful KaTrain
+# Moyo
 
 Native macOS interface for [KaTrain](https://github.com/sanderland/katrain), in SwiftUI.
 
-![Beautiful KaTrain](docs/images/beautiful-katrain.png)
+![Moyo](docs/images/moyo-go.png)
 
 ## What it does
 
@@ -16,7 +16,7 @@ Native macOS interface for [KaTrain](https://github.com/sanderland/katrain), in 
 ## How it works
 
 ```
-BeautifulKaTrain.app  ──JSON lines over stdin/stdout──>  bridge.py  ──>  katrain.core  ──>  KataGo
+Moyo.app  ──JSON lines over stdin/stdout──>  bridge.py  ──>  katrain.core  ──>  KataGo
       (SwiftUI)                                           (Python)     (pip, unmodified)
 ```
 
@@ -28,12 +28,12 @@ Requires macOS 26+, Xcode, Python 3.11+, and KataGo with a model.
 
 ```bash
 brew install katago
-git clone https://github.com/moifort/beautiful-katrain.git
-cd beautiful-katrain
+git clone https://github.com/moifort/moyo-go.git
+cd moyo-go
 python3 -m venv .venv
 .venv/bin/pip install -r bridge/requirements.txt
 ./app/Scripts/build-app.sh
-open app/build/BeautifulKaTrain.app
+open app/build/Moyo.app
 ```
 
 Engine settings are read from `~/.katrain/config.json`, shared with KaTrain.

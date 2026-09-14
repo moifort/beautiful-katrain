@@ -27,7 +27,7 @@ public struct GameWindow: View {
             NewGameSheet(session: session)
         }
         .focusedSceneValue(\.gameSession, session)
-        .onReceive(NotificationCenter.default.publisher(for: .beautifulKaTrainNewGameRequested)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .moyoNewGameRequested)) { _ in
             isShowingNewGame = true
         }
     }

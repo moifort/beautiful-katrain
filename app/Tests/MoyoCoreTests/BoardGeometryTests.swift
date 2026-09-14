@@ -1,7 +1,7 @@
 import CoreGraphics
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Géométrie du plateau")
 struct BoardGeometryTests {

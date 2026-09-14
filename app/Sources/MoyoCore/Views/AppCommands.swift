@@ -1,7 +1,7 @@
 import SwiftUI
 
 extension Notification.Name {
-    public static let beautifulKaTrainNewGameRequested = Notification.Name("BeautifulKaTrain.newGameRequested")
+    public static let moyoNewGameRequested = Notification.Name("Moyo.newGameRequested")
 }
 
 /// Lets the menu bar reach the session of whichever window has focus.
@@ -28,7 +28,7 @@ public struct GameCommands: Commands {
     public var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Nouvelle partie…") {
-                NotificationCenter.default.post(name: .beautifulKaTrainNewGameRequested, object: nil)
+                NotificationCenter.default.post(name: .moyoNewGameRequested, object: nil)
             }
             .keyboardShortcut("n", modifiers: .command)
         }

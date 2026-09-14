@@ -1,6 +1,6 @@
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Décodage de la phase de comptage")
 struct ScoringDecodingTests {

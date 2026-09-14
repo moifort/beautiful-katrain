@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Décodage des événements du pont")
 struct BridgeEventTests {

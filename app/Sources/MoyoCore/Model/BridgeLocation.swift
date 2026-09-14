@@ -13,17 +13,17 @@ public struct BridgeLocation: Sendable {
     public init(root: URL) {
         python = root.appendingPathComponent(".venv/bin/python")
         script = root.appendingPathComponent("bridge/bridge.py")
-        logDirectory = URL.applicationSupportDirectory.appendingPathComponent("BeautifulKaTrain")
+        logDirectory = URL.applicationSupportDirectory.appendingPathComponent("Moyo")
     }
 
     public static func resolve(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         bundle: Bundle = .main
     ) -> BridgeLocation? {
-        if let path = environment["BEAUTIFUL_KATRAIN_ROOT"], !path.isEmpty {
+        if let path = environment["MOYO_DEV_ROOT"], !path.isEmpty {
             return BridgeLocation(root: URL(fileURLWithPath: path))
         }
-        if let path = bundle.object(forInfoDictionaryKey: "BKTProjectRoot") as? String, !path.isEmpty {
+        if let path = bundle.object(forInfoDictionaryKey: "MoyoProjectRoot") as? String, !path.isEmpty {
             return BridgeLocation(root: URL(fileURLWithPath: path))
         }
         return nil

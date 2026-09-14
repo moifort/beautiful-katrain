@@ -12,7 +12,7 @@ public struct SidebarView: View {
         VStack(alignment: .leading, spacing: 14) {
             if let state = session.state, let scoring = state.scoring {
                 ScoringPanel(detail: scoring) {
-                    NotificationCenter.default.post(name: .beautifulKaTrainNewGameRequested, object: nil)
+                    NotificationCenter.default.post(name: .moyoNewGameRequested, object: nil)
                 }
             } else if let state = session.state {
                 turnRow(state)

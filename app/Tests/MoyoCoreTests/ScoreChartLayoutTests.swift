@@ -1,7 +1,7 @@
 import CoreGraphics
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Agrégation du graphe de score")
 struct ScoreChartLayoutTests {

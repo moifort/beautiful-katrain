@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Préférences retenues d'un lancement à l'autre")
 struct SettingsStoreTests {

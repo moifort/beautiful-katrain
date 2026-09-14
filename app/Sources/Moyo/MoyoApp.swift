@@ -1,8 +1,8 @@
-import BeautifulKaTrainCore
+import MoyoCore
 import SwiftUI
 
 @main
-struct BeautifulKaTrainApp: App {
+struct MoyoApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()

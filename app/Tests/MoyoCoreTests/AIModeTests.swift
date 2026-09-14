@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import BeautifulKaTrainCore
+@testable import MoyoCore
 
 @Suite("Modes de l'adversaire")
 struct AIModeTests {
