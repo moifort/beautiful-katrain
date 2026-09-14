@@ -1,0 +1,198 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      smoke_only:
+        description: 'Build the bundle, run the gate, and stop there (no signing, no upload)'
+        required: false
+        type: boolean
+        default: false
+      skip_upload:
+        description: 'Build, gate and package, but stop before App Store Connect'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-macos
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 🪨 macOS build, gate & upload
+    # Self-hosted, and it has to be: KataGo needs Metal, and the gate runs the real
+    # bundle under its real sandbox. A GitHub runner has no GPU, and would also
+    # repay the twenty minutes of KataGo every time.
+    #
+    # The runner must live in a logged-in GUI session — a launchd *agent*, not a
+    # daemon. Without a window server there is no Metal, and the gate fails for a
+    # reason that has nothing to do with the release.
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 90
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # git rev-list --count HEAD doit voir toute l'histoire
+
+      - name: Compute version numbers
+        run: |
+          set -euo pipefail
+          BUILD=$(git rev-list --count HEAD)
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            MARKETING="${GITHUB_REF_NAME#v}"
+          else
+            MARKETING="0.0.0-$(git rev-parse --short HEAD)"
+          fi
+          echo "BUILD=$BUILD" >> "$GITHUB_ENV"
+          echo "MARKETING=$MARKETING" >> "$GITHUB_ENV"
+          echo "Releasing Moyo $MARKETING ($BUILD)"
+
+      - name: Run the unit suites
+        run: |
+          set -euo pipefail
+          # Rapides toutes les deux, et elles disent bien plus précisément que la
+          # barrière *ce* qui casse. Les passer d'abord coûte quelques secondes.
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet -r bridge/requirements.txt
+          .venv/bin/python -m pytest bridge/tests -q
+          swift test --package-path app
+
+      - name: Build KataGo
+        run: |
+          set -euo pipefail
+          # Vingt minutes à froid, quelques secondes ensuite : sur un runner
+          # auto-hébergé le vendor/ survit d'une exécution à l'autre, donc aucun
+          # cache à gérer. Le script refuse de finir si le binaire garde la moindre
+          # dépendance hors système.
+          ./app/Scripts/build-katago.sh
+
+      - name: Import the signing certificates
+        if: ${{ inputs.smoke_only != true }}
+        env:
+          MACOS_DIST_CERT_P12: ${{ secrets.MACOS_DIST_CERT_P12 }}
+          MACOS_DIST_CERT_PASSWORD: ${{ secrets.MACOS_DIST_CERT_PASSWORD }}
+          MACOS_INSTALLER_CERT_P12: ${{ secrets.MACOS_INSTALLER_CERT_P12 }}
+          MACOS_INSTALLER_CERT_PASSWORD: ${{ secrets.MACOS_INSTALLER_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Deux certificats, contre un seul sur iOS : *Apple Distribution* scelle
+          # l'application, *Mac Installer Distribution* scelle le .pkg. Ils vont dans
+          # un trousseau jetable plutôt que dans celui de session — sur une machine
+          # auto-hébergée, le trousseau de session peut être verrouillé, et codesign
+          # attendrait alors un mot de passe que personne ne viendra taper.
+          KEYCHAIN="$RUNNER_TEMP/moyo-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Une fonction plutôt qu'une boucle sur des paires « p12:motdepasse » :
+          # un mot de passe contenant un deux-points aurait été coupé en deux, et
+          # l'import aurait échoué sur un message parlant de certificat.
+          import_cert() {
+            local payload="$1" password="$2" path="$RUNNER_TEMP/cert-$$-$RANDOM.p12"
+            [ -n "$payload" ] || { echo "::error::certificat absent des secrets"; exit 1; }
+            printf '%s' "$payload" | base64 -d > "$path"
+            security import "$path" -P "$password" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+            rm -f "$path"
+          }
+          import_cert "$MACOS_DIST_CERT_P12" "$MACOS_DIST_CERT_PASSWORD"
+          import_cert "$MACOS_INSTALLER_CERT_P12" "$MACOS_INSTALLER_CERT_PASSWORD"
+          security set-key-partition-list -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" \
+            $(security list-keychains -d user | sed 's/["[:space:]]//g')
+          echo "MOYO_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security find-identity -v "$KEYCHAIN"
+
+      - name: Materialize the provisioning profile
+        if: ${{ inputs.smoke_only != true }}
+        env:
+          MACOS_PROVISION_PROFILE: ${{ secrets.MACOS_PROVISION_PROFILE }}
+        run: |
+          set -euo pipefail
+          # Sur macOS le profil vit dans le bundle, pas dans ~/Library/MobileDevice :
+          # build-app.sh le pose avant de signer.
+          PROFILE="$RUNNER_TEMP/moyo.provisionprofile"
+          printf '%s' "$MACOS_PROVISION_PROFILE" | base64 -d > "$PROFILE"
+          echo "MOYO_PROVISION_PROFILE=$PROFILE" >> "$GITHUB_ENV"
+
+      - name: Assemble the bundle
+        env:
+          MOYO_PLAY_MODEL: ${{ vars.MOYO_PLAY_MODEL }}
+          MOYO_HUMAN_MODEL_FILE: ${{ vars.MOYO_HUMAN_MODEL_FILE }}
+          MOYO_SIGN_IDENTITY: ${{ vars.MOYO_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          # Les 190 Mo de modèles ne peuvent pas vivre dans le dépôt. Sur un runner
+          # auto-hébergé ils sont déjà sur la machine ; les variables ci-dessus
+          # disent où, et build-app.sh refuse de démarrer si l'une manque.
+          #
+          # smoke_only signe en ad-hoc : le sandbox est réel, donc la barrière reste
+          # fidèle, sans mobiliser les certificats de distribution.
+          if [ "${{ inputs.smoke_only }}" = "true" ]; then
+            unset MOYO_SIGN_IDENTITY MOYO_PROVISION_PROFILE
+          fi
+          MOYO_VERSION="$MARKETING" MOYO_BUILD_NUMBER="$BUILD" \
+            ./app/Scripts/build-app.sh release
+
+      # ── La barrière ────────────────────────────────────────────────────────
+      # Le bundle qu'on s'apprête à publier joue un coup contre KataGo, ouvre un
+      # enregistrement, le parcourt, et déroule la proposition du moteur — le tout
+      # depuis son propre sandbox, qui est le seul endroit d'où la preuve vaut.
+      # Sort 1 à la première phase qui échoue, et le tag n'atteint pas l'App Store.
+      - name: Gate — the bundle plays and reads back
+        run: ./app/build/Moyo.app/Contents/MacOS/Moyo --smoke
+
+      - name: Package the signed .pkg
+        if: ${{ inputs.smoke_only != true }}
+        env:
+          MOYO_INSTALLER_IDENTITY: ${{ vars.MOYO_INSTALLER_IDENTITY }}
+        run: ./app/Scripts/package-app.sh
+
+      - name: Install the App Store Connect API key
+        if: ${{ inputs.smoke_only != true && inputs.skip_upload != true }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "${{ secrets.ASC_KEY_P8 }}" \
+            > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Upload to App Store Connect
+        if: ${{ inputs.smoke_only != true && inputs.skip_upload != true }}
+        run: |
+          set -euo pipefail
+          xcrun altool --upload-app --type macos \
+            --file app/build/Moyo.pkg \
+            --apiKey "$ASC_KEY_ID" \
+            --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Archive the .pkg as a run artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Moyo-pkg
+          path: app/build/Moyo.pkg
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Forget the temporary keychain
+        if: always()
+        run: |
+          set -euo pipefail
+          # Une machine auto-hébergée garde ce qu'on y laisse : un trousseau de
+          # distribution oublié entre deux exécutions est un certificat qui traîne.
+          if [ -n "${MOYO_KEYCHAIN:-}" ]; then
+            security list-keychains -d user -s \
+              $(security list-keychains -d user | sed 's/["[:space:]]//g' | grep -v "$MOYO_KEYCHAIN" || true)
+            security delete-keychain "$MOYO_KEYCHAIN" || true
+          fi
+          rm -f "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"

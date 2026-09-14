@@ -26,6 +26,12 @@ VERSION="${MOYO_VERSION:-0.1.0}"
 BUILD_NUMBER="${MOYO_BUILD_NUMBER:-1}"
 IDENTITY="${MOYO_SIGN_IDENTITY:--}"   # « - » : signature ad-hoc, suffisante en local
 
+# Profil de provisioning App Store. Sur macOS il vit *dans* le bundle, contrairement
+# à iOS où il se dépose dans ~/Library/MobileDevice, et il doit y être avant la
+# signature : signer d'abord puis le glisser invaliderait le sceau. Vide en local,
+# où une signature ad-hoc n'en réclame aucun.
+PROVISION_PROFILE="${MOYO_PROVISION_PROFILE:-}"
+
 for path in "$KATAGO" "$PLAY_MODEL" "$HUMAN_MODEL" "$ENGINE_CONFIG"; do
   [ -e "$path" ] || { echo "manque : $path" >&2; exit 1; }
 done
@@ -48,6 +54,11 @@ cp "$ENGINE_CONFIG" "$CONTENTS/Resources/analysis_config.cfg"
 cp "$PLAY_MODEL" "$CONTENTS/Resources/models/play.bin.gz"
 cp "$HUMAN_MODEL" "$CONTENTS/Resources/models/human.bin.gz"
 cp "$APP_DIR/Resources/icon/Moyo.icns" "$CONTENTS/Resources/Moyo.icns"
+if [ -n "$PROVISION_PROFILE" ]; then
+  [ -f "$PROVISION_PROFILE" ] || { echo "profil de provisioning introuvable : $PROVISION_PROFILE" >&2; exit 1; }
+  cp "$PROVISION_PROFILE" "$CONTENTS/embedded.provisionprofile"
+  echo "    profil de provisioning intégré"
+fi
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
