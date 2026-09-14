@@ -20,8 +20,20 @@ public enum BundleSelfTest {
         "(;GM[1]FF[4]SZ[9]KM[6.5]RU[japanese]PB[Noir]PW[Blanc]RE[B+R]"
         + ";B[ee];W[cc];B[gg];W[cg];B[gc])"
 
+    /// Délai par défaut, et de quoi le desserrer là où la machine est lente.
+    ///
+    /// Un runner GitHub est une machine virtuelle : son GPU est paravirtualisé et
+    /// KataGo y analyse bien plus lentement que sur un Mac de bureau. `MOYO_SMOKE_TIMEOUT`
+    /// laisse la CI accorder le temps qu'il faut sans toucher au code.
+    public static var configuredTimeout: TimeInterval {
+        guard let raw = ProcessInfo.processInfo.environment["MOYO_SMOKE_TIMEOUT"],
+            let seconds = TimeInterval(raw), seconds > 0
+        else { return 240 }
+        return seconds
+    }
+
     /// Code de sortie : 0 si toutes les phases passent, 1 à la première qui échoue.
-    public static func run(timeout: TimeInterval = 240) -> Int32 {
+    public static func run(timeout: TimeInterval = configuredTimeout) -> Int32 {
         guard let location = BridgeLocation.resolve() else {
             note("aucun emplacement de pont n'a pu être résolu")
             return 1
