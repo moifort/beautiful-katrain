@@ -53,16 +53,16 @@ Each entry says what it is and why it was deferred, so the reasoning survives.
 
 ## Release
 
-- **The signing and submission halves have never run.** They are written from
-  Vinarium's workflow and from the App Store Connect API, but nothing has exercised
-  them end to end — there has been no release. `workflow_dispatch` with `smoke_only`
-  covers everything up to the gate without a certificate; `skip_upload` covers the
-  signed `.pkg`. Those two should be run before a tag is ever pushed.
+- **Nothing past the gate has ever run.** `release.sh` is exercised up to and
+  including the gate; the signing, the upload and the submission have not, because
+  there has been no release. `MOYO_SMOKE_ONLY=1` and `MOYO_SKIP_UPLOAD=1` walk the
+  chain in stages, and both should be used before a real one.
 
-- **A runner's GPU is paravirtualised.** KataGo analyses far slower there than on a
-  desktop Mac, hence `MOYO_SMOKE_TIMEOUT=900` on the gate. If Metal turns out to be
-  unavailable altogether on the runner image, the gate has to move back to a
-  self-hosted Mac — it is the one step that cannot be faked.
+- **The release is not reproducible off this Mac.** It wants KataGo compiled, the
+  certificates in the login keychain and a real GPU. That is a deliberate trade: a
+  GitHub runner has a paravirtualised GPU and cannot prove a game is played, which
+  is the whole point of the gate. If the release ever has to leave this machine, the
+  gate is what has to be solved first, not the build.
 
 - **Release notes come from the tag annotation, in French only.** Every App Store
   locale gets the same text. That is honest while the interface is hardcoded French;

@@ -69,49 +69,43 @@ swift test --package-path app
 
 ## Release
 
-An annotated tag `v*` runs `.github/workflows/release.yml`, on GitHub's own macOS
-runner. Nothing in it runs on an ordinary commit: KataGo, the models and the gate
-are paid for when a release is asked for.
+Releases are made from a Mac, with one command:
 
 ```bash
 git tag -a v1.0 -m "Ce qui change dans cette version…"
-git push origin v1.0
+MOYO_PROVISION_PROFILE=~/Downloads/Moyo.provisionprofile \
+ASC_KEY_ID=… ASC_ISSUER_ID=… ASC_KEY_PATH=… \
+  ./app/Scripts/release.sh v1.0
 ```
 
 The tag's annotation becomes the "What's New" text, so a version's notes live with
 the version rather than in a changelog.
 
-The chain: unit suites → KataGo (compiled once, then cached) → the models (fetched
-and checksummed) → the bundle → **the gate** → `.pkg` → App Store Connect → attach
-the build and submit for review.
+The chain: unit suites → KataGo → the models, fetched and checksummed → the signed
+bundle and its `.pkg` → **the gate** → App Store Connect → attach the build and
+submit for review.
 
 The gate is `Moyo --smoke`. It plays a move against KataGo, opens a record, walks
 it, and unrolls the engine's continuation — from inside the bundle's own sandbox,
 the only place the proof is worth anything. It exits non-zero on the first phase
-that fails, and nothing is uploaded after that. A runner's GPU is paravirtualised
-and analyses slowly, hence `MOYO_SMOKE_TIMEOUT`.
+that fails, and the release stops there.
 
-`workflow_dispatch` adds `smoke_only`, which stops after the gate and needs no
-certificate at all, and `skip_upload`, which stops after the `.pkg`.
+`MOYO_SMOKE_ONLY=1` stops after the gate and needs no certificate at all;
+`MOYO_SKIP_UPLOAD=1` stops with the `.pkg` in hand.
+
+CI runs the two unit suites and nothing else, on every commit
+(`.github/workflows/test.yml`). It does not build the bundle and does not run the
+gate: a GitHub runner's GPU is paravirtualised, so it can compile and sign but it
+cannot show that a game is played — which is the one thing a release has to
+guarantee. This Mac has everything anyway: KataGo compiled, the models, the
+certificates in the keychain, a real GPU.
 
 ### Before the first release
 
 The App Store Connect API cannot create an app record. Create it once on
 appstoreconnect.apple.com — name, SKU, language — then set category, age rating,
-privacy policy, pricing and screenshots there. Only then can the workflow attach a
-build and submit it.
-
-Signing is scripted. With the two certificates in your keychain and a Mac App Store
-provisioning profile downloaded:
-
-```bash
-./app/Scripts/signing-secrets.sh ~/Downloads/Moyo.provisionprofile
-```
-
-It exports the identities, encodes them, and sets `MACOS_SIGNING_P12`,
-`MACOS_SIGNING_P12_PASSWORD`, `MACOS_PROVISION_PROFILE`, `MOYO_SIGN_IDENTITY` and
-`MOYO_INSTALLER_IDENTITY`. `ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_KEY_P8` are
-account-wide and already in place.
+privacy policy, pricing and screenshots there. Only then can a build be attached
+and submitted.
 
 ## Limits
 
