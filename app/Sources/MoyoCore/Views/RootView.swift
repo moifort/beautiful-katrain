@@ -17,7 +17,10 @@ public struct RootView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { session.start() }
+        .task {
+            session.start()
+            if DemoScript.isRequested() { await DemoScript.run(on: session) }
+        }
         .onDisappear { session.stop() }
     }
 
