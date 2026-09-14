@@ -111,6 +111,14 @@ jobs:
         if: steps.models-cache.outputs.cache-hit != 'true'
         run: ./app/Scripts/fetch-models.sh
 
+      # 24 Mo à télécharger et une empreinte à vérifier : autant le garder entre
+      # deux runs, comme les modèles.
+      - name: Restore the embedded Python
+        uses: actions/cache@v6
+        with:
+          path: vendor/python
+          key: python-dist-${{ hashFiles('app/Scripts/fetch-python.sh') }}
+
       - name: Import the signing identities
         if: ${{ inputs.smoke_only != true }}
         env:

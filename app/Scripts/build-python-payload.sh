@@ -10,7 +10,9 @@ SOURCE_PYTHON="$ROOT/vendor/python"
 SITE_PACKAGES="$ROOT/.venv/lib/python3.13/site-packages"
 OUT="${1:-$ROOT/app/build/payload}"
 
-[ -d "$SOURCE_PYTHON" ] || { echo "manque $SOURCE_PYTHON (voir vendor/)" >&2; exit 1; }
+# L'interpréteur embarqué n'est pas dans le dépôt : 66 Mo, et une empreinte à
+# vérifier. On le récupère plutôt que d'exiger une étape manuelle.
+[ -d "$SOURCE_PYTHON" ] || "$ROOT/app/Scripts/fetch-python.sh" "$SOURCE_PYTHON"
 [ -d "$SITE_PACKAGES/katrain" ] || { echo "manque katrain dans $SITE_PACKAGES" >&2; exit 1; }
 
 echo "==> Copie de l'interpréteur"
