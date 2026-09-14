@@ -62,6 +62,13 @@ jobs:
           echo "MARKETING=$MARKETING" >> "$GITHUB_ENV"
           echo "Releasing Moyo $MARKETING ($BUILD)"
 
+      # katrain exige Python < 3.14, et le runner en propose une plus récente. On
+      # fige 3.13, qui est aussi la version que le bundle embarque : les tests
+      # tournent sur l'interpréteur qui sera livré, pas sur un autre.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
       - name: Run the unit suites
         run: |
           set -euo pipefail
